@@ -83,10 +83,15 @@ define(`RING_WRAP_AROUND', `add b32 $5 $1 $2
 .equ #io_FIFO_0_GET	0x4b0
 .equ #io_FIFO_INTR	0x4c0
 .equ #io_FIFO_INTR_EN	0x4c4
+.equ #io_RFIFO_PUT	0x4c8
+.equ #io_RFIFO_GET	0x4cc
 .equ #io_INTR11		0x688
 .equ #io_MMIO_ADDR	0x7a0
 .equ #io_MMIO_VAL	0x7a4
 .equ #io_MMIO_CTRL	0x7ac
+
+/* define some other constants */
+.equ #const_rdispatch_size 0x100
 
 /* store some important pointers */
 ifdef(`NVA3',
@@ -503,6 +508,89 @@ memcpy_ring:
 	bra #memcpy_ring
 
 memcpy_ring_exit:
+	ret
+
+	/* rdispatch_send_msg: Sends msgs from PDAEMON processes to HOST
+ * In:	$r10: pid (Process Id)
+ * 	$r11: msg_id (Message Id) 
+ * 	$r12: payload_size (Size of the message payload being sent) 
+ * 	$r13: start of payload   
+ */
+rdispatch_send_msg:
+
+  	push $r1
+	push $r2
+	push $r3
+	
+	mov b32 $r1 $r10
+	mov b32 $r2 $r11
+	mov b32 $r3 $r12
+
+	movw $r12 #const_rdispatch_size
+	
+wait_for_size_available_loop:
+
+	/*while( RING_SIZE - memoryUsed() < payload_size + 3);*/
+	call #rdispatch_memory_used
+	sub b32 $r10 $r12 $r10
+	add b32 $r11 $r3 3
+	cmpu b32 $r10 $r11
+	bra l #wait_for_size_available_loop
+	
+	/* $r11 = $r10 = RFIFO_PUT */
+	IOADDR(`#io_RFIFO_PUT', `$r15')
+	iord $r11 I[$r15]
+	mov b32 $r10 $r11
+	
+	/* D[*PUT] = pid; D[*PUT+1] = msg_id; D[*PUT+2] = payload_size; */
+	st b8 D[$r10] $r1
+	movw $r12 #const_rdispatch_size
+	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
+	st b8 D[$r10] $r2
+	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
+	st b8 D[$r10] $r3
+	
+	/* $r14 = payload_size */
+	mov b32 $r14 $r3 
+	call #memcpy_ring
+
+cont:	/* Inc RFIFO_PUT */
+	add b32 $r11 $r3 3
+	RING_WRAP_AROUND(`$r10', `3', `$r11', `$r12', `$r10')
+	iowrs I[$r15] $r4
+	
+	pop $r3
+	pop $r2
+	pop $r1
+	
+	ret
+	
+	
+/* rdispatch_memory_used: return the number of bytes used by rdispatch
+ * In:	None
+ * Out:	$r10: number of bytes used by rdispatch
+ */
+rdispatch_memory_used:
+	
+	st b32 D[$r0 + 0] $r11
+	
+	IOADDR(`#io_RFIFO_PUT', `$r12')
+	iord $r10 I[$r12]
+	st b32 D[$r0 + 4] $r10
+	
+	IOADDR(`#io_RFIFO_GET', `$r12')
+	iord $r11 I[$r12]
+	st b32 D[$r0 + 8] $r11
+	
+	cmpu b32 $r10 $r11
+	bra ae #rdispatch_memory_used_put_greater
+	
+	add b32 $r10 $r10 #const_rdispatch_size
+	movw $r12 #const_rdispatch_size
+	st b32 D[$r0 + 12] $r12
+	
+rdispatch_memory_used_put_greater:
+	sub b32 $r10 $r10 $r11
 	ret
 
 /* strncpy:
@@ -1097,6 +1185,10 @@ main:
 	/* call the tasks */
 	call #temp_main
 
+	call #rdispatch_memory_used
+	movw $r11 0xa00
+	st b32 D[$r0 + 16] $r10
+	
 	/* sleep_ns(5s) */
 	movw $r11 0xf200
 	sethi $r11 0x2a050000
