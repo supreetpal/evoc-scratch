@@ -60,7 +60,7 @@
  */
 
 // IOADDR(address, output_reg)
-ifdef(`NVA3', `define(`IOADDR', `movw $2 $1 << 6
+ifdef(`NVA3', `define(`IOADDR', `movw $2 $1
 	sethi $2 0
 	shl b32 $2 6')'
 ,define(`IOADDR', `movw $2 $1
@@ -1185,8 +1185,8 @@ main:
 	/* call the tasks */
 	call #temp_main
 
-	call #rdispatch_memory_used
 	movw $r11 0xa00
+	call #rdispatch_memory_used
 	st b32 D[$r0 + 16] $r10
 	
 	/* sleep_ns(5s) */
