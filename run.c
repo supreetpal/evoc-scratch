@@ -342,7 +342,7 @@ int main(int argc, char **argv)
 	
 	//while(1){  
 	
-		data_segment_dump(cnum, 0x0, 0x100);
+		data_segment_dump(cnum, 0xa00, 0x100);
 	
 		usleep(50000);
 	//}
