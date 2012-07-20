@@ -101,8 +101,7 @@ static void data_segment_upload_u8(unsigned int cnum, uint16_t base,
 		}
 		tmp |= (data[i] << (i % 4) * 8);
 	}
-	if (length % 4 != 0)
-		nva_wr32(cnum, 0x10a1cc, tmp);
+	nva_wr32(cnum, 0x10a1cc, tmp);
 }
 
 static void pdaemon_upload(unsigned int cnum) {
