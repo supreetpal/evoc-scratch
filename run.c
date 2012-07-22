@@ -128,13 +128,14 @@ static void pdaemon_upload(unsigned int cnum) {
 			  sizeof(nvd9_pdaemon_data)/sizeof(*nvd9_pdaemon_data));
 	}
 
-	/* Writing test data to 0xd00 */
- 	uint8_t buffer[0x100];
-
+	/* Writing test data to 0xd00.
+	 * TODO: Get rid of this when we are done testing
+	 */
+ 	uint8_t buffer[0x100] = { 0 };
 	for ( i = 0; i < 0x100; i++)
 	    buffer[i] = i;
 	data_segment_upload_u8(cnum, 0xd00, buffer, 0x100);
-	
+
 	/* code upload */
 	if (nva_cards[cnum].chipset < 0xd9) {
 		code_size = sizeof(nva3_pdaemon_code)/sizeof(*nva3_pdaemon_code);
@@ -338,13 +339,18 @@ int main(int argc, char **argv)
 
 	pdaemon_upload(cnum);
 	usleep(1000);
-	
-	//while(1){  
-	
+
+	/* test that the d00 are is well initialized */
+	data_segment_dump(cnum, 0xd00, 0x100);
+
+	while(1){
+		printf("\n\n-- RFIFO_GET(%x) RFIFO_PUT(%x) --\n",
+			nva_rd32(cnum, 0x10a4cc), nva_rd32(cnum, 0x10a4c8));
+		data_segment_dump(cnum, 0x0, 0x10);
 		data_segment_dump(cnum, 0xa00, 0x100);
-	
-		usleep(50000);
-	//}
-	
+
+		usleep(1000000);
+	}
+
 	return 0;
 }

@@ -246,6 +246,15 @@ init:
 	bset $flags ie0
 	bset $flags ie0
 
+	/* iowr(RFIFO_PUT, rdispatch_ring)
+	 * iowr(RFIFO_GET, rdispatch_ring)
+	 */
+	mov $r15 #rdispatch_ring
+	IOADDR(`#io_RFIFO_PUT', `$r14')
+	iowrs I[$r14] $r15
+	IOADDR(`#io_RFIFO_GET', `$r14')
+	iowrs I[$r14] $r15
+
 	bra #main
 	exit
 
@@ -511,78 +520,108 @@ memcpy_ring_exit:
 	ret
 
 /* rdispatch_send_msg: Sends msgs from PDAEMON processes to HOST
+ * WARNING: Do not try to push a message larger than rdispatch_size - 3!
  * In:	$r10: pid (Process Id)
- * 	$r11: msg_id (Message Id) 
- * 	$r12: payload_size (Size of the message payload being sent) 
- * 	$r13: start of payload   
+ * 	$r11: msg_id (Message Id)
+ * 	$r12: payload_size (Size of the message payload being sent)
+ * 	$r13: start of payload
  */
 rdispatch_send_msg:
-
-  	push $r1
+	push $r1
 	push $r2
 	push $r3
-	
+	push $r4
+	push $r5
+
 	mov b32 $r1 $r10
 	mov b32 $r2 $r11
 	mov b32 $r3 $r12
+	mov b32 $r4 $r13
 
-	mov $r12 #const_rdispatch_size
-	
 wait_for_size_available_loop:
 
-	/*while( RING_SIZE - memoryUsed() < payload_size + 3);*/
-	call #rdispatch_memory_used
-	sub b32 $r10 $r12 $r10
-	add b32 $r11 $r3 3
-	cmpu b32 $r10 $r11
-	bra l #wait_for_size_available_loop
-	
-	/* $r11 = $r10 = RFIFO_PUT */
+	/*while( RING_SIZE - memoryUsed() < payload_size + 3) { */
+		/* $r10 = rdispatch_memory_used */
+		call #rdispatch_memory_used
+
+		/* $r12 = rdispatch_size */
+		mov $r12 #const_rdispatch_size
+
+		/* $r10 = rdispatch_size - rdispatch_memory_used */
+		sub b32 $r10 $r12 $r10
+
+		/* $r11 = header_size + payload_size */
+		add b32 $r11 $r3 3
+
+		cmp b32 $r10 $r11
+		bra l #wait_for_size_available_loop
+	/* } */
+
+	/* $r10 = RFIFO_PUT */
 	IOADDR(`#io_RFIFO_PUT', `$r15')
-	iord $r11 I[$r15]
-	mov b32 $r10 $r11
-	
-	/* D[*PUT] = pid; D[*PUT+1] = msg_id; D[*PUT+2] = payload_size; */
-	st b8 D[$r10] $r1
+	iord $r10 I[$r15]
+
+	/* $r11 = rdispatch_ring */
+	mov $r11 #rdispatch_ring
+
+	/* $r12 = rdispatch_size */
 	mov $r12 #const_rdispatch_size
+
+	/* D[*PUT] = pid; D[*PUT+1] = msg_id; D[*PUT+2] = payload_size
+	 * $r10 = wrap(RFIFO_PUT + 3)
+	 */
+	st b8 D[$r10] $r1
 	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
 	st b8 D[$r10] $r2
 	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
 	st b8 D[$r10] $r3
-	
+	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
+
+	/* $r13 = payload_src */
+	mov b32 $r13 $r4
+
 	/* $r14 = payload_size */
-	mov b32 $r14 $r3 
+	mov b32 $r14 $r3
+
+	/* $r5 = wrap(RFIFO_PUT + header_size + payload_size) */
+	IOADDR(`#io_RFIFO_PUT', `$r15')
+	iord $r15 I[$r15]
+	add b32 $r5 $r3 3
+	RING_WRAP_AROUND(`$r15', `$r5', `$r11', `$r12', `$r5')
+
+	/* copy the payload to the ring */
 	call #memcpy_ring
 
-cont:	/* Inc RFIFO_PUT */
-	add b32 $r11 $r3 3
-	RING_WRAP_AROUND(`$r10', `3', `$r11', `$r12', `$r10')
-	iowrs I[$r15] $r4
-	
+	/* update RFIFO_PUT */
+	IOADDR(`#io_RFIFO_PUT', `$r15')
+	iowrs I[$r15] $r5
+
+	pop $r5
+	pop $r4
 	pop $r3
 	pop $r2
 	pop $r1
-	
+
 	ret
-	
-	
+
+
 /* rdispatch_memory_used: return the number of bytes used by rdispatch
  * In:	None
  * Out:	$r10: number of bytes used by rdispatch
  */
 rdispatch_memory_used:
-	
+
 	IOADDR(`#io_RFIFO_PUT', `$r12')
 	iord $r10 I[$r12]
-	
+
 	IOADDR(`#io_RFIFO_GET', `$r12')
 	iord $r11 I[$r12]
-	
+
 	cmpu b32 $r10 $r11
 	bra ae #rdispatch_memory_used_put_greater
-	
+
 	add b32 $r10 $r10 #const_rdispatch_size
-	
+
 rdispatch_memory_used_put_greater:
 	sub b32 $r10 $r10 $r11
 	ret
@@ -1176,27 +1215,36 @@ hwsq_dispatch:
  * Out:	None
  */
 main:
+
+main_loop:
 	/* call the tasks */
 	call #temp_main
-	
-/* rdispatch_send_msg: Sends msgs from PDAEMON processes to HOST
- * In:	$r10: pid (Process Id)
- * 	$r11: msg_id (Message Id) 
- * 	$r12: payload_size (Size of the message payload being sent) 
- * 	$r13: start of payload   
- */
 
+	/* test memcpy_ring */
+// 	mov $r10 0xa00
+// 	mov $r11 0xa00
+// 	mov $r12 0x100
+// 	mov $r13 0xd00
+// 	mov $r14 0x8
+// 	call #memcpy_ring
+
+/* Testing #rdispatch_send_msg & #rdispatch_memory_used */
+	/* rdispatch_send_msg: Sends msgs from PDAEMON processes to HOST
+	 * In:	$r10: pid (Process Id)
+	 * 	$r11: msg_id (Message Id)
+	 * 	$r12: payload_size (Size of the message payload being sent)
+	 * 	$r13: start of payload
+	 */
 	mov $r10 1
 	mov $r11 2
-	mov $r12 0xfd
+	mov $r12 0xed
 	mov $r13 0xd00
-	
-	IOADDR(`#io_RFIFO_PUT', `$r14')
-	mov $r15 0xa00
-	iowrs I[$r14] $r15
-	
 	call #rdispatch_send_msg
-	
+
+	call #rdispatch_memory_used
+	st b32 D[$r0 + 0xc] $r10
+
+
 	/* sleep_ns(5s) */
 	movw $r11 0xf200
 	sethi $r11 0x2a050000
@@ -1204,5 +1252,5 @@ main:
 	sethi $r10 0
 	call #sleep_ns
 
-	bra #main
+	bra #main_loop
 .align 256
