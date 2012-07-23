@@ -328,8 +328,8 @@ int main(int argc, char **argv)
 {
 	struct pdaemon_resource_command cmd;
 	uint8_t buf[1000];
-	uint32_t GET;
-	uint32_t PUT;
+	uint32_t RFIFO_GET;
+	uint32_t RFIFO_PUT;
 		
 	if (nva_init()) {
 		fprintf (stderr, "PCI init failure!\n");
@@ -361,16 +361,19 @@ int main(int argc, char **argv)
 		printf("\n\n-- RFIFO_GET(%x) RFIFO_PUT(%x) --\n",
 			nva_rd32(cnum, 0x10a4cc), nva_rd32(cnum, 0x10a4c8));
 		
-		GET = nva_rd32(cnum, 0x10a4cc);
-		//PUT = nva_rd32(cnum, 0x10a4c8);
+		RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
+		RFIFO_PUT = nva_rd32(cnum, 0x10a4c8);
 		
-		data_segment_dump(cnum, GET, 0x4);
+		if ( RFIFO_GET != RFIFO_PUT){
 		
-		GET = RING_WRAP_AROUND( GET, 4, 0xa00, RDISPATCH_SIZE); 
+		    data_segment_dump(cnum, RFIFO_GET, 0x4);
 		
-		nva_wr32(cnum, 0x10a4cc, GET);
+		    RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 4, 0xa00, RDISPATCH_SIZE); 
 		
-		usleep(1000);
+		    nva_wr32(cnum, 0x10a4cc, RFIFO_GET);
+		}
+		
+		usleep(100000);
 	}
 
 	return 0;
