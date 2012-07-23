@@ -14,6 +14,7 @@ typedef enum { get = 0, set = 1} resource_op;
 #define PDAEMON_DISPATCH_RING 0x00000550
 #define PDAEMON_DISPATCH_DATA 0x00000590
 #define PDAEMON_DISPATCH_DATA_SIZE 0x00000370
+#define RDISPATCH_SIZE 0x100
 
 #define NV04_PTIMER_TIME_0                                 0x00009400
 #define NV04_PTIMER_TIME_1                                 0x00009410
@@ -312,13 +313,24 @@ static bool pdaemon_read_resource(int cnum, struct pdaemon_resource_command *cmd
 	return true;
 }
 
+// RING_WRAP_AROUND(`current_pos', `bump_increment', `ring_base', `ring_size')
+uint32_t RING_WRAP_AROUND(int cur_pos, int bump, uint32_t ring_base, uint32_t ring_size)
+{
+	uint32_t output;
+	output = cur_pos + bump;
+	output = output % ring_size;
+	output = output + ring_base;
+	
+	return output;  
+	}
+
 int main(int argc, char **argv)
 {
 	struct pdaemon_resource_command cmd;
 	uint8_t buf[1000];
 	uint32_t GET;
 	uint32_t PUT;
-	
+		
 	if (nva_init()) {
 		fprintf (stderr, "PCI init failure!\n");
 		return 1;
@@ -350,15 +362,15 @@ int main(int argc, char **argv)
 			nva_rd32(cnum, 0x10a4cc), nva_rd32(cnum, 0x10a4c8));
 		
 		GET = nva_rd32(cnum, 0x10a4cc);
-		PUT = nva_rd32(cnum, 0x10a4c8);
+		//PUT = nva_rd32(cnum, 0x10a4c8);
 		
 		data_segment_dump(cnum, GET, 0x4);
 		
-		GET += 4;
+		GET = RING_WRAP_AROUND( GET, 4, 0xa00, RDISPATCH_SIZE); 
 		
 		nva_wr32(cnum, 0x10a4cc, GET);
 		
-		usleep(1000000);
+		usleep(1000);
 	}
 
 	return 0;
