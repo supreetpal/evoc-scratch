@@ -316,7 +316,9 @@ int main(int argc, char **argv)
 {
 	struct pdaemon_resource_command cmd;
 	uint8_t buf[1000];
-
+	uint32_t GET;
+	uint32_t PUT;
+	
 	if (nva_init()) {
 		fprintf (stderr, "PCI init failure!\n");
 		return 1;
@@ -346,9 +348,16 @@ int main(int argc, char **argv)
 	while(1){
 		printf("\n\n-- RFIFO_GET(%x) RFIFO_PUT(%x) --\n",
 			nva_rd32(cnum, 0x10a4cc), nva_rd32(cnum, 0x10a4c8));
-		data_segment_dump(cnum, 0x0, 0x10);
-		data_segment_dump(cnum, 0xa00, 0x100);
-
+		
+		GET = nva_rd32(cnum, 0x10a4cc);
+		PUT = nva_rd32(cnum, 0x10a4c8);
+		
+		data_segment_dump(cnum, GET, 0x4);
+		
+		GET += 4;
+		
+		nva_wr32(cnum, 0x10a4cc, GET);
+		
 		usleep(1000000);
 	}
 
