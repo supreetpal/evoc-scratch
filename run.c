@@ -340,7 +340,7 @@ struct rdispatch_msg {
 	uint8_t payload[RDISPATCH_SIZE];
 };
 
-int dump_msg(int cnum, struct rdispatch_msg msg){
+int rdispatch_read_msg(int cnum, struct rdispatch_msg *msg){
 		
 	uint32_t RFIFO_GET;
 	uint32_t RFIFO_PUT;
@@ -360,31 +360,17 @@ int dump_msg(int cnum, struct rdispatch_msg msg){
 	    data_segment_read(cnum, RFIFO_GET, 0x4, header_buf);
 	    RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 3, 0xa00, RDISPATCH_SIZE);
 		    
-	    msg.pid = header_buf[0];
-	    msg.msg_id = header_buf[1];
-	    msg.payload_size = header_buf[2];
-		  
-	    printf(" head.pid = ");
-	    printf("%08x\n", msg.pid);
-	    printf(" head.msg_id = ");
-	    printf("%08x\n", msg.msg_id);
-	    printf(" head.payload_size = ");
-	    printf("%08x\n", msg.payload_size);
+	    msg->pid = header_buf[0];
+	    msg->msg_id = header_buf[1];
+	    msg->payload_size = header_buf[2];
 		  
 	    while ( i < header_buf[2]){
 		      
-	      data_segment_read(cnum, RFIFO_GET, 0x1, msg.payload);		  
+	      data_segment_read(cnum, RFIFO_GET, 0x1, msg->payload);		  
 	      RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 1, 0xa00, RDISPATCH_SIZE);
 		      
 	      i++;
-	    }
-		    
-		      
-	    for( i = 0; i < header_buf[2]; i++){
-		  
-	      printf("%08x\n", msg.payload[i]);
-		  
-	    }
+	    }   
 		    
 	    RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
 	    nva_wr32(cnum, 0x10a4cc, RING_WRAP_AROUND( RFIFO_GET, 3 + header_buf[2], 0xa00, RDISPATCH_SIZE));
@@ -398,6 +384,7 @@ int main(int argc, char **argv)
 {
 	struct pdaemon_resource_command cmd;
 	struct rdispatch_msg msg;
+	int i = 0;
 		
 	if (nva_init()) {
 		fprintf (stderr, "PCI init failure!\n");
@@ -427,8 +414,24 @@ int main(int argc, char **argv)
 
 	while (1) {
 	
-		if (dump_msg(cnum, msg) != 0)
+		if (rdispatch_read_msg(cnum, &msg) != 0)
 			usleep(100000);
+		
+		else{
+		  rdispatch_read_msg(cnum, &msg);
+		  printf(" pid = ");
+		  printf("%08x\n", msg.pid);
+		  printf(" msg_id = ");
+		  printf("%08x\n", msg.msg_id);
+		  printf(" payload_size = ");
+		  printf("%08x\n", msg.payload_size);
+		
+		  	      
+		  for( i = 0; i < msg.payload_size; i++)
+		        printf("%08x\n", msg.payload[i]);
+		  
+	    }
+		
 	}
 
 	return 0;
