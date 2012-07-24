@@ -40,15 +40,22 @@ ptime_t get_time(unsigned int card)
 
 static bool data_segment_read(unsigned int cnum, uint16_t base, uint16_t length, uint8_t *buf)
 {
-	uint32_t i;
-	uint32_t *b = (uint32_t*)buf;
+	uint32_t aligned_base, base_shift;
+	uint16_t i = 0;
 
-	if (base != (base & 0xfffc))
-		return false;
+	aligned_base = base & 0xfffc;
+	base_shift = (base - aligned_base) * 8;
 
-	nva_wr32(cnum,0x10a1c8, 0x02000000 | base);
-	for (i = 0; i < length / 4; i++) {
-		b[i] = nva_rd32(cnum, 0x10a1cc);
+	nva_wr32(cnum,0x10a1c8, 0x02000000 | aligned_base);
+		while(i < length) {
+			uint32_t data = nva_rd32(cnum, 0x10a1cc);
+	
+			uint16_t shift;
+			do {
+				shift = (base_shift + (i * 8)) % 32;
+				buf[i] = (data >> shift) & 0xff;
+				i++;
+			} while (i < length && shift < 24);
 	}
 
 	return true;
