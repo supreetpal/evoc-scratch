@@ -418,7 +418,7 @@ int main(int argc, char **argv)
 			usleep(100000);
 		
 		else{
-		  rdispatch_read_msg(cnum, &msg);
+		  
 		  printf(" pid = ");
 		  printf("%08x\n", msg.pid);
 		  printf(" msg_id = ");
