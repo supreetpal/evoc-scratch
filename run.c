@@ -333,15 +333,43 @@ struct RFIFO_Header {
 	uint8_t *payload;
 };
 
+void read_msg(int cnum, uint32_t RFIFO_GET){
+		
+		  struct RFIFO_Header head;
+		  uint8_t header_buf[0x4];
+		  int i = 0;
+		  
+		  data_segment_read(cnum, RFIFO_GET, 0x4, header_buf);
+		  RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 3, 0xa00, RDISPATCH_SIZE);
+		  
+		  head.pid = header_buf[0];
+		  head.msg_id = header_buf[1];
+		  head.payload_size = header_buf[2];
+		  
+		  printf(" head.pid = ");
+		  printf("%08x\n", head.pid);
+		  printf(" head.msg_id = ");
+		  printf("%08x\n", head.msg_id);
+		  printf(" head.payload_size = ");
+		  printf("%08x\n", head.payload_size);
+		  
+		  data_segment_read(cnum, RFIFO_GET, header_buf[2], head.payload);
+		
+		  for( i = 0; i < header_buf[2]; i++){
+		  
+		  printf("%08x\n", head.payload[i]);
+		  
+		  }
+		  RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
+		  nva_wr32(cnum, 0x10a4cc, RING_WRAP_AROUND( RFIFO_GET, 3 + header_buf[2], 0xa00, RDISPATCH_SIZE));
+
+}
+
 int main(int argc, char **argv)
 {
 	struct pdaemon_resource_command cmd;
-	struct RFIFO_Header head;
-	uint8_t header_buf[0x4];
-	uint8_t payload_buf[0x100];
 	uint32_t RFIFO_GET;
 	uint32_t RFIFO_PUT;
-	int i = 0;
 		
 	if (nva_init()) {
 		fprintf (stderr, "PCI init failure!\n");
@@ -378,42 +406,12 @@ int main(int argc, char **argv)
 		
 		if ( RFIFO_GET != RFIFO_PUT){
 		  
-		  data_segment_read(cnum, RFIFO_GET, 0x4, header_buf);
-		  RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 3, 0xa00, RDISPATCH_SIZE);
+		  read_msg( cnum, RFIFO_GET);
 		  
-		 /* for( i = 0; i < 4; i++){
-		      printf("%08x\n", header_buf[i]); 
-		  }
-		  */
-		  head.pid = header_buf[0];
-		  head.msg_id = header_buf[1];
-		  head.payload_size = header_buf[2];
-		  
-		  printf(" head.pid = ");
-		  printf("%08x\n", head.pid);
-		  printf(" head.msg_id = ");
-		  printf("%08x\n", head.msg_id);
-		  printf(" head.payload_size = ");
-		  printf("%08x\n", head.payload_size);
-		  
-		data_segment_read(cnum, RFIFO_GET, header_buf[2], payload_buf);
-		
-		head.payload = payload_buf;
-		
-		RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, header_buf[2], 0xa00, RDISPATCH_SIZE);
-		
-		for( i = 0; i < header_buf[2]; i++){
-		  
-		  printf("%08x\n", payload_buf[i]);
-		  
-		}
-		    RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
-		    nva_wr32(cnum, 0x10a4cc, RFIFO_GET + 3 + header_buf[2]);
-	//	}
-		
+		}	  
 		
 		//usleep(100000);
-	}
+	//}
 
 	return 0;
 }
