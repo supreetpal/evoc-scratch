@@ -410,12 +410,15 @@ int main(int argc, char **argv)
 	usleep(1000);
 
 	/* test that the d00 are is well initialized */
-	//data_segment_dump(cnum, 0xd00, 0x100);
+	data_segment_dump(cnum, 0xd00, 0x100);
 
 	while (1) {
 	
+	//Does not read if pdaemon writes the entire ring before reading starts.
+	//Does not read the first 4locations.
+	
 		if (rdispatch_read_msg(cnum, &msg) != 0)
-			usleep(100000);
+			usleep(1000000);
 		
 		else{
 		  
