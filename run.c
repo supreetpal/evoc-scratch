@@ -332,72 +332,72 @@ uint32_t RING_WRAP_AROUND(int cur_pos, int bump, uint32_t ring_base, uint32_t ri
 	}
 	
 
-struct RFIFO_Header {
-	
+struct rdispatch_msg {
+  
 	uint8_t pid;
 	uint8_t msg_id;
 	uint8_t payload_size;
-	uint8_t *payload;
+	uint8_t payload[RDISPATCH_SIZE];
 };
 
-int dump_msg(int cnum){
+int dump_msg(int cnum, struct rdispatch_msg msg){
 		
-		  struct RFIFO_Header head;
-		  uint32_t RFIFO_GET;
-		  uint32_t RFIFO_PUT;
-		  uint8_t header_buf[0x4];
-		  int i = 0;
+	uint32_t RFIFO_GET;
+	uint32_t RFIFO_PUT;
+	uint8_t header_buf[0x4];
+	int i = 0;
 		  
-		  RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
-		  RFIFO_PUT = nva_rd32(cnum, 0x10a4c8);
+	RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
+	RFIFO_PUT = nva_rd32(cnum, 0x10a4c8);
 		
-		  if ( RFIFO_GET == RFIFO_PUT )
-		      printf( " No messages in ring\n ");
-		    
-		  else {  
-		    
-		    data_segment_read(cnum, RFIFO_GET, 0x4, header_buf);
-		    RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 3, 0xa00, RDISPATCH_SIZE);
-		    
-		    head.pid = header_buf[0];
-		    head.msg_id = header_buf[1];
-		    head.payload_size = header_buf[2];
+	if ( RFIFO_GET == RFIFO_PUT ){
+	      printf( " No messages in ring\n "); 
+	      return 1;
+	}
 		  
-		    printf(" head.pid = ");
-		    printf("%08x\n", head.pid);
-		    printf(" head.msg_id = ");
-		    printf("%08x\n", head.msg_id);
-		    printf(" head.payload_size = ");
-		    printf("%08x\n", head.payload_size);
+	else {  
+		    
+	    data_segment_read(cnum, RFIFO_GET, 0x4, header_buf);
+	    RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 3, 0xa00, RDISPATCH_SIZE);
+		    
+	    msg.pid = header_buf[0];
+	    msg.msg_id = header_buf[1];
+	    msg.payload_size = header_buf[2];
 		  
-		    while ( i < header_buf[2]){
+	    printf(" head.pid = ");
+	    printf("%08x\n", msg.pid);
+	    printf(" head.msg_id = ");
+	    printf("%08x\n", msg.msg_id);
+	    printf(" head.payload_size = ");
+	    printf("%08x\n", msg.payload_size);
+		  
+	    while ( i < header_buf[2]){
 		      
-		      data_segment_read(cnum, RFIFO_GET, 0x1, head.payload);
-		  
-		      RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 1, 0xa00, RDISPATCH_SIZE);
+	      data_segment_read(cnum, RFIFO_GET, 0x1, msg.payload);		  
+	      RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 1, 0xa00, RDISPATCH_SIZE);
 		      
-		      i++;
-		    }
+	      i++;
+	    }
 		    
 		      
-		    for( i = 0; i < header_buf[2]; i++){
+	    for( i = 0; i < header_buf[2]; i++){
 		  
-		      printf("%08x\n", head.payload[i]);
+	      printf("%08x\n", msg.payload[i]);
 		  
-		    }
+	    }
 		    
-		    RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
-		    nva_wr32(cnum, 0x10a4cc, RING_WRAP_AROUND( RFIFO_GET, 3 + header_buf[2], 0xa00, RDISPATCH_SIZE));
+	    RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
+	    nva_wr32(cnum, 0x10a4cc, RING_WRAP_AROUND( RFIFO_GET, 3 + header_buf[2], 0xa00, RDISPATCH_SIZE));
 
-		    }
+	}
 		    
-		    return 0;
+	    return 0;
 }
 
 int main(int argc, char **argv)
 {
 	struct pdaemon_resource_command cmd;
-	
+	struct rdispatch_msg msg;
 		
 	if (nva_init()) {
 		fprintf (stderr, "PCI init failure!\n");
@@ -425,15 +425,11 @@ int main(int argc, char **argv)
 	/* test that the d00 are is well initialized */
 	//data_segment_dump(cnum, 0xd00, 0x100);
 
-	//while(1){
-		printf("\n\n-- RFIFO_GET(%x) RFIFO_PUT(%x) --\n",
-			nva_rd32(cnum, 0x10a4cc), nva_rd32(cnum, 0x10a4c8));
-		
-		  dump_msg( cnum);
-		  
-		
-		//usleep(100000);
-	//}
+	while (1) {
+	
+		if (dump_msg(cnum, msg) != 0)
+			usleep(100000);
+	}
 
 	return 0;
 }
