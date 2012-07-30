@@ -46,16 +46,18 @@ int main(int argc, char **argv)
 		u8 opcode = le8(ucode->ptr.u08, &i);
 		switch (opcode) {
 			case 0x42:
-				printf("hwsq_wr32( 0x%08x, 0x%08x\n", ucode->reg, ucode->val);
+				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", ucode->reg, ucode->val);
 				break;
 			case 0xe2:
-				printf("hwsq_wr32( 0x%08x, 0x%08x\n", ucode->reg, ucode->val);
+				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", ucode->reg, ucode->val);
+				printf("%01x ", ucode->ptr.u08[i]);
 				break;
 			case 0x40:
-				printf("hwsq_wr32( 0x%08x, 0x%08x\n", ucode->reg, ucode->val);
+				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", ucode->reg, ucode->val);
 				break;
 			case 0xe0:
-				printf("hwsq_wr32( 0x%08x, 0x%08x\n", ucode->reg, ucode->val);
+				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", ucode->reg, ucode->val);
+				printf("Reg value=%01x ", le32(ucode->ptr.u08, &i));
 				break;
 			case 0x7f:
 				printf("exit\n");
