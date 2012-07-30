@@ -50,7 +50,7 @@ int main(int argc, char **argv)
 				break;
 			case 0xe2:
 				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", ucode->reg, ucode->val);
-				printf("%01x ", ucode->ptr.u08[i]);
+				printf("value = 0x%08x\n", le32(ucode->ptr.u08, &i));
 				break;
 			case 0x40:
 				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", ucode->reg, ucode->val);
