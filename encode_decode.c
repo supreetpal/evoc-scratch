@@ -43,28 +43,23 @@ int main(int argc, char **argv)
 	printf("decode program:\n");
 	i = 0;
 	while (i < ucode->len) {
-		j = i + 1 ;
-		u8 opcode = le8(ucode->ptr.u08, &i);
+		u8 opcode = le8(ucode->ptr.u08, &i);		
 		switch (opcode) {
 			case 0x42:
-				val = le32(ucode->ptr.u08, &j);
-				j = j + 1;
-				reg = le32(ucode->ptr.u08, &j);
-				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", reg, val);
-				printf("value = 0x%08x\n", le32(ucode->ptr.u08, &i));
+				val = (val & 0xffff0000) |  le16(ucode->ptr.u08, &i); 
 				break;
 			case 0xe2:
-				val = le32(ucode->ptr.u08, &j);
-				j = j + 1;
-				reg = le32(ucode->ptr.u08, &j);
-				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", reg, val);
-				printf("value = 0x%08x\n", le32(ucode->ptr.u08, &i));
+				val = le32(ucode->ptr.u08, &i);
+				printf(" value = 0x%08x\n", val);
 				break;
 			case 0x40:
-				printf("Reg value=%01x ", le32(ucode->ptr.u08, &i));
+				reg =  (reg & 0xffff0000) |  le16(ucode->ptr.u08, &i); 
+				printf("hwsq(0x%x, 0x%x\n", reg, val); 
 				break;
 			case 0xe0:
-				printf("Reg value=%01x ", le32(ucode->ptr.u08, &i));
+				reg = le32(ucode->ptr.u08, &i);
+				printf("Reg value=0x%08x\n", reg);
+				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", reg, val);
 				break;
 			case 0x7f:
 				printf("exit\n");
@@ -73,6 +68,7 @@ int main(int argc, char **argv)
 				printf("unknown opcode %1x\n", opcode);
 				break;
 		}
+					
 	}
 	
 	
