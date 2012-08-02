@@ -23,11 +23,13 @@ u8 le8 (const u8 *buf, int *off) {
 int main(int argc, char **argv)
 {
 	struct hwsq_ucode code, *ucode = &code;
-	int i,j,reg,val;
+	int i,j,reg,val, v0, v1, flag;
 
 	/* create a script */
 	hwsq_init(ucode);
 	hwsq_wr32(ucode, 0x12345678, 0xdeadbeef);
+	hwsq_op5f(ucode, 0x12, 0x34);
+	hwsq_setf(ucode, 0x01, 1);
 	hwsq_fini(ucode);
 	
 	/* print the generated code */
@@ -43,8 +45,14 @@ int main(int argc, char **argv)
 	printf("decode program:\n");
 	i = 0;
 	while (i < ucode->len) {
-		u8 opcode = le8(ucode->ptr.u08, &i);		
+		u8 opcode = le8(ucode->ptr.u08, &i);
+		
+		if (opcode>0x80 && opcode<0x9f) opcode = 1;
+		if (opcode>0xa0 && opcode<0xbf) opcode = 2;
+		if (opcode>0xc0 && opcode<0xdf) opcode = 3;
+		  
 		switch (opcode) {
+			//hwsq_wr32
 			case 0x42:
 				val = (val & 0xffff0000) |  le16(ucode->ptr.u08, &i); 
 				break;
@@ -61,9 +69,31 @@ int main(int argc, char **argv)
 				printf("Reg value=0x%08x\n", reg);
 				printf("hwsq_wr32( 0x%08x, 0x%08x)\n", reg, val);
 				break;
+						
+			//op5f
+			case 0x5f:
+				v0 = le8(ucode->ptr.u08, &i);
+				v1 = le8(ucode->ptr.u08, &i);
+				printf(" hwsq_op5f( 0x%02x, 0x%02x)\n", v0, v1);
+				
+			//setf
+			case 1:
+			      flag = le8(ucode->ptr.u08, &i);
+			      flag -= 0x80;
+			      printf("flag = 0x%02x\n", flag);
+			
+			case 2: case 3:
+			      
+			      flag = le8(ucode->ptr.u08, &i);
+			      flag -= 0x80;
+			      flag -= 0x20;
+			      printf("flag = 0x%02x\n", flag);
+				
+			
 			case 0x7f:
 				printf("exit\n");
 				break;
+				
 			default:
 				printf("unknown opcode %1x\n", opcode);
 				break;
