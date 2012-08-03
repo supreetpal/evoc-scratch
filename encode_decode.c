@@ -47,10 +47,12 @@ int main(int argc, char **argv)
 	while (i < ucode->len) {
 		u8 opcode = le8(ucode->ptr.u08, &i);
 		
+		printf("opcode = 0x%02x\n", opcode);
+		
 		if (opcode>0x80 && opcode<0x9f) opcode = 1;
 		if (opcode>0xa0 && opcode<0xbf) opcode = 2;
 		if (opcode>0xc0 && opcode<0xdf) opcode = 3;
-		  
+				  
 		switch (opcode) {
 			//hwsq_wr32
 			case 0x42:
@@ -75,21 +77,25 @@ int main(int argc, char **argv)
 				v0 = le8(ucode->ptr.u08, &i);
 				v1 = le8(ucode->ptr.u08, &i);
 				printf(" hwsq_op5f( 0x%02x, 0x%02x)\n", v0, v1);
+				break;
 				
 			//setf
 			case 1:
+			      i--;
 			      flag = le8(ucode->ptr.u08, &i);
 			      flag -= 0x80;
-			      printf("flag = 0x%02x\n", flag);
-			
+			      printf("flag1 = 0x%02x\n", flag);
+			    			      
 			case 2: case 3:
-			      
+			      i--;
 			      flag = le8(ucode->ptr.u08, &i);
+			        printf("flag2 = 0x%04x\n", flag);
 			      flag -= 0x80;
+			        printf("flag2 = 0x%04x\n", flag);
 			      flag -= 0x20;
-			      printf("flag = 0x%02x\n", flag);
-				
-			
+			      flag -= 0x20;
+			      printf("flag2 = 0x%04x\n", flag);
+			      
 			case 0x7f:
 				printf("exit\n");
 				break;
