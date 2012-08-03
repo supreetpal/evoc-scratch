@@ -84,17 +84,29 @@ int main(int argc, char **argv)
 			      i--;
 			      flag = le8(ucode->ptr.u08, &i);
 			      flag -= 0x80;
-			      printf("flag1 = 0x%02x\n", flag);
+			      printf("flag = 0x%02x\n", flag);
+			      break;
 			    			      
-			case 2: case 3:
+			case 2: 
 			      i--;
 			      flag = le8(ucode->ptr.u08, &i);
-			        printf("flag2 = 0x%04x\n", flag);
+			        
 			      flag -= 0x80;
-			        printf("flag2 = 0x%04x\n", flag);
+			      flag -= 0x20;
+			      
+			      printf("flag = 0x%02x; val >= 0\n", flag);
+			      break;
+			      
+			case 3:
+			      i--;
+			      flag = le8(ucode->ptr.u08, &i);
+			        
+			      flag -= 0x80;
 			      flag -= 0x20;
 			      flag -= 0x20;
-			      printf("flag2 = 0x%04x\n", flag);
+			      
+			      printf("flag = 0x%02x; val >=1\n", flag);
+			      break;
 			      
 			case 0x7f:
 				printf("exit\n");
