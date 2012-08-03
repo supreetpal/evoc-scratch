@@ -29,7 +29,7 @@ int main(int argc, char **argv)
 	hwsq_init(ucode);
 	hwsq_wr32(ucode, 0x12345678, 0xdeadbeef);
 	hwsq_op5f(ucode, 0x12, 0x34);
-	hwsq_setf(ucode, 0x01, 1);
+	hwsq_setf(ucode, 0x01, 0);
 	hwsq_fini(ucode);
 	
 	/* print the generated code */
@@ -94,7 +94,7 @@ int main(int argc, char **argv)
 			      flag -= 0x80;
 			      flag -= 0x20;
 			      
-			      printf("flag = 0x%02x; val >= 0\n", flag);
+			      printf("hwsq_setf(0x%02x,0)\n", flag);
 			      break;
 			      
 			case 3:
@@ -105,7 +105,7 @@ int main(int argc, char **argv)
 			      flag -= 0x20;
 			      flag -= 0x20;
 			      
-			      printf("flag = 0x%02x; val >=1\n", flag);
+			      printf("hwsq_setf(0x%02x,1)\n", flag);
 			      break;
 			      
 			case 0x7f:
