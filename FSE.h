@@ -65,7 +65,7 @@ FSE_mask()
 
 }
 
-FSE_wait(
+FSE_wait()
 {
 
 }
@@ -83,16 +83,3 @@ FSE_send_msg(struct FSE_ucode *FSE, u16 size, u8 *msg)
 	    size--;
 	    }
 }	    
-	    
-	    
-	    
-	    
-	    
-	    
-	    
-	    
-	    
-	    
-	    
-	    
-	    ;
