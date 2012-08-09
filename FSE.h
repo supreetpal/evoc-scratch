@@ -9,7 +9,8 @@ struct FSE_ucode
 		u16 *u16;
 		u32 *u32;
 	} ptr;
-
+	u16 len;
+	
 	u32 reg;
 	u32 val;
 };
@@ -20,6 +21,16 @@ FSE_init(struct FSE_ucode *FSE)
 	FSE->ptr.u08 = FSE->data;
 	FSE->reg = 0xffffffff;
 	FSE->val = 0xffffffff;
+}
+
+static inline void
+FSE_fini(struct FSE_ucode *FSE)
+{
+	do {
+		*FSE->ptr.u08++ = 0x7f;
+		FSE->len = FSE->ptr.u08 - hwsq->data;
+	} while (FSE->len & 3);
+	FSE->ptr.u08 = FSE->data;
 }
 
 FSE_delay()
