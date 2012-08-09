@@ -43,7 +43,7 @@ FSE_write(struct FSE_ucode *FSE, u32 reg, u32 val)
 {
 	if (val != FSE->val) {
 		if ((val & 0xffff0000) != 0x00000000)) {
-			*FSE->ptr.u08++ = 0x10;
+			*FSE->ptr.u08++ = 0x11;
 			*FSE->ptr.u08++ = val;
 			*FSE->ptr.u32++ = reg;
 		  
