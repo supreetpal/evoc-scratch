@@ -8,16 +8,13 @@ struct FSE_ucode
 	} ptr;
 	u16 len;
 	
-	u32 reg;
-	u32 val;
 };
 
 static inline void
 FSE_init(struct FSE_ucode *FSE)
 {
 	FSE->ptr.u08 = FSE->data;
-	FSE->reg = 0xffffffff;
-	FSE->val = 0xffffffff;
+	
 }
 
 static inline void
@@ -38,21 +35,18 @@ FSE_delay()
 
 FSE_write(struct FSE_ucode *FSE, u32 reg, u32 val)
 {
-	if (val != FSE->val) {
-		if ((val & 0x00) != 0x00) {
-			*FSE->ptr.u08++ = 0x11;
-			*FSE->ptr.u08++ = val;
-			*FSE->ptr.u32++ = reg;
-		  
-		} else {
-			*FSE->ptr.u08++ = 0x10;
-			*FSE->ptr.u32++ = val;
-			*FSE->ptr.u32++ = reg;
-		}
-
-		FSE->val = val;
-		FSE->reg = reg;
+	if (val & 0xff == val) {
+		*FSE->ptr.u08++ = 0x11;
+		*FSE->ptr.u08++ = val;
+		*FSE->ptr.u32++ = reg;
+		
+	} else {
+		*FSE->ptr.u08++ = 0x10;
+		*FSE->ptr.u32++ = val;
+		*FSE->ptr.u32++ = reg;
+			
 	}
+
 
 }
 

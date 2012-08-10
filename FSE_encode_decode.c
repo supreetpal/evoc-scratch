@@ -28,6 +28,7 @@ int main(int argc, char **argv)
 	/* create a script */
 	FSE_init(ucode);
 	FSE_write(ucode, 0x12345678, 0xdeadbeef);
+	FSE_write(ucode, 0x12345678, 0xef);
 	//FSE_send_msg(ucode, 5, msg);
 	FSE_fini(ucode);
 	
@@ -47,7 +48,7 @@ int main(int argc, char **argv)
 		u8 opcode = le8(ucode->ptr.u08, &i);
 		switch (opcode) {
 			case 0x10:
-				printf("FSE_write(0x%08x, 0x%08x);\n",le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
+				printf("FSE_write(0x%08x, 0x%02x);\n",le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
 				break;
 			case 0x11:
 				printf("FSE_write(0x%08x, 0x%08x);\n",le8(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
