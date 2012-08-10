@@ -47,12 +47,21 @@ int main(int argc, char **argv)
 	while (i < ucode->len) {
 		u8 opcode = le8(ucode->ptr.u08, &i);
 		switch (opcode) {
+		  
+			case 0x01:
+				  printf("FSE_delay(0x%08x)\n",le32(ucode->ptr.u08, &i));
+				  
+			case 0x02:
+				  printf("FSE_delay(0x%08x)\n",le32(ucode->ptr.u08, &i));
+				  
 			case 0x10:
 				printf("FSE_write(0x%08x, 0x%02x);\n",le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
 				break;
+			
 			case 0x11:
 				printf("FSE_write(0x%08x, 0x%08x);\n",le8(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
 				break;
+			
 			case 0x20:
 				size = le16(ucode->ptr.u08, &i);
 				printf(" FSE_send_msg(0x%08x,", size);
@@ -61,10 +70,12 @@ int main(int argc, char **argv)
 				      printf("0x%08x ,", le8(ucode->ptr.u08, &i));      
 				      size--;
 				}
-				break;
+				break; 
+			
 			case 0x7f:
 				printf("exit\n");
 				break;
+			
 			default:
 				printf("unknown opcode %1x\n", opcode);
 				break;
