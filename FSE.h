@@ -1,3 +1,4 @@
+
 struct FSE_ucode
 {
 	u8 data[0x200];
@@ -27,20 +28,29 @@ FSE_fini(struct FSE_ucode *FSE)
 	FSE->ptr.u08 = FSE->data;
 }
 
-FSE_delay(struct FSE_ucode *FSE, u32 val)
+FSE_delay_ns(struct FSE_ucode *FSE, u64 val)
 {
-	if (val & 0xfff == val)	{
-		*FSE->ptr.u08++ = 0x01;
-		*FSE->ptr.u32++ = val;
-	}
-	
-	else if (val & 0xffffff == val) 	{
-		*FSE->ptr.u08++ = 0x02;
-		*FSE->ptr.u32++ = val;
-	}
+	if( val > 0xffff) {
+		    *FSE->ptr.u08++ = 0x0;
+		    *FSE->ptr.u32++ = (val >> 32);
+		    *FSE->ptr.u32++ = (val & 0xffffffff);	  
+	}    		
 	
 	else {
 	  
+	 val = val & 0xffff;
+	 
+	    if (val < 1000) {
+		    *FSE->ptr.u08++ = 0x01;
+		    *FSE->ptr.u16++ = val;
+		}	
+	
+	    else {
+		    val = val/1000;
+		    *FSE->ptr.u08++ = 0x02;
+		    *FSE->ptr.u16++ = val;
+		}
+		    
 	}
 	  
 }
@@ -78,9 +88,8 @@ FSE_send_msg(struct FSE_ucode *FSE, u16 size, u8 *msg)
 	*FSE->ptr.u08++ = 0x20;
 	*FSE->ptr.u16++ = size;
 	
-	while(size != 0){
+	while(i < size) {
 	    *FSE->ptr.u08++ = msg[i];
 	    i++;
-	    size--;
 	    }
 }	    
