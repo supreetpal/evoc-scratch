@@ -7,15 +7,13 @@ struct FSE_ucode
 		u16 *u16;
 		u32 *u32;
 	} ptr;
-	u16 len;
-	
+	u16 len;	
 };
 
 static inline void
 FSE_init(struct FSE_ucode *FSE)
 {
-	FSE->ptr.u08 = FSE->data;
-	
+	FSE->ptr.u08 = FSE->data;	
 }
 
 static inline void
