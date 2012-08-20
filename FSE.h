@@ -29,29 +29,32 @@ FSE_fini(struct FSE_ucode *FSE)
 }
 
 
-FSE_delay_ns(struct FSE_ucode *FSE, u64 val)
+FSE_delay_ns(struct FSE_ucode *FSE, u64 delay_ns)
 {
-	if( val >= 0xffff * 1000) {
-		    *FSE->ptr.u08++ = 0x0;
-		    *FSE->ptr.u32++ = (val >> 32);
-		    *FSE->ptr.u32++ = (val & 0xffffffff);	  
-	}    		
-	
-	else {
-	  
-	    if (val % 1000 >= 32) {
-		    *FSE->ptr.u08++ = 0x01;
-		    *FSE->ptr.u16++ = (val % 1000) / 32;;
-		}	
-	
-	    if (val > 999) {
-		    
-		    *FSE->ptr.u08++ = 0x02;
-		    *FSE->ptr.u16++ = val/1000;
-		}
-		    
-	}
-	  
+  if (delay_ns <= 0xffff * 32) {
+    *FSE->ptr.u08++ = 0x01;
+    *FSE->ptr.u16++ = delay_ns / 32;
+  } else if (delay_ns <= 0xffff * 1000) {
+    /* wait some micro seconds */
+    *FSE->ptr.u08++ = 0x2;
+    *FSE->ptr.u16++ = delay_ns / 1000;
+ 
+    /* complete the delay with ns */
+    if (delay_ns % 1000 >= 32) {
+      *FSE->ptr.u08++ = 0x1;
+      *FSE->ptr.u16++ = (delay_ns % 1000) / 32;
+    }
+  } else {
+    /* we could try harder to optimize the output, but that should
+     * be sufficient since most waits will be under 65ms anyway.
+     *
+     * If we need to wait longer quite often, then a new opcode
+     * could be added.
+     */
+    *FSE->ptr.u08++ = 0x0;
+    *FSE->ptr.u32++ = (delay_ns >> 32);
+    *FSE->ptr.u32++ = (delay_ns & 0xffffffff);
+  }
 }
 
 
@@ -71,14 +74,21 @@ FSE_write(struct FSE_ucode *FSE, u32 reg, u32 val)
 
 }
 
-FSE_mask()
+FSE_mask(struct FSE_ucode *FSE, u32 reg, u32 mask, u32 data)
 {
-
+	*FSE->ptr.u08++ = 0x12;
+	*FSE->ptr.u32++ = reg;
+	*FSE->ptr.u32++ = mask;
+	*FSE->ptr.u32++ = data;  
 }
 
-FSE_wait()
-{
 
+FSE_mask(struct FSE_ucode *FSE, u32 reg, u32 mask, u32 data)
+{
+	*FSE->ptr.u08++ = 0x13;
+	*FSE->ptr.u32++ = reg;
+	*FSE->ptr.u32++ = mask;
+	*FSE->ptr.u32++ = data;  
 }
 
 FSE_send_msg(struct FSE_ucode *FSE, u16 size, u8 *msg)
