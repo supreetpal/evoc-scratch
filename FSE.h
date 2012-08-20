@@ -21,27 +21,28 @@ FSE_init(struct FSE_ucode *FSE)
 static inline void
 FSE_fini(struct FSE_ucode *FSE)
 {
-	 *FSE->ptr.u08 = 0xff; 
-	 FSE->ptr.u08 = FSE->data;
+	*FSE->ptr.u08 = 0xff; 
+	FSE->ptr.u08 = FSE->data;
 }
 
 static inline void
 FSE_delay_ns(struct FSE_ucode *FSE, u64 delay_ns)
 {
-      if (delay_ns <= 0xffff * 32) {
+	if (delay_ns <= 0xffff * 32) {
 		*FSE->ptr.u08++ = 0x01;
 		*FSE->ptr.u16++ = delay_ns / 32;
-      } else if (delay_ns <= 0xffff * 1000) {
+		
+	} else if (delay_ns <= 0xffff * 1000) {
 		/* wait some micro seconds */
 		*FSE->ptr.u08++ = 0x2;
 		*FSE->ptr.u16++ = delay_ns / 1000;
  
-	    /* complete the delay with ns */
-	    if (delay_ns % 1000 >= 32) {
-		*FSE->ptr.u08++ = 0x1;
-		*FSE->ptr.u16++ = (delay_ns % 1000) / 32;
-	    }
-      } else {
+		/* complete the delay with ns */
+		if (delay_ns % 1000 >= 32) {
+			*FSE->ptr.u08++ = 0x1;
+			*FSE->ptr.u16++ = (delay_ns % 1000) / 32;
+		}
+	} else {
 	/* we could try harder to optimize the output, but that should
 	* be sufficient since most waits will be under 65ms anyway.
 	*
@@ -51,7 +52,7 @@ FSE_delay_ns(struct FSE_ucode *FSE, u64 delay_ns)
 		*FSE->ptr.u08++ = 0x0;
 		*FSE->ptr.u32++ = (delay_ns >> 32);
 		*FSE->ptr.u32++ = (delay_ns & 0xffffffff);
-      }
+	}
 }
 
 static inline void
@@ -96,7 +97,9 @@ FSE_send_msg(struct FSE_ucode *FSE, u16 size, u8 *msg)
 	*FSE->ptr.u16++ = size;
 	
 	while(i < size) {
-	    *FSE->ptr.u08++ = msg[i];
-	    i++;
-	    }
-}	    
+		*FSE->ptr.u08++ = msg[i];
+		i++;
+	}
+}	
+
+  
