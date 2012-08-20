@@ -28,10 +28,10 @@ FSE_fini(struct FSE_ucode *FSE)
 	FSE->ptr.u08 = FSE->data;
 }
 
+
 FSE_delay_ns(struct FSE_ucode *FSE, u64 val)
 {
-	
-	if( val > 0xffff) {
+	if( val >= 0xffff * 1000) {
 		    *FSE->ptr.u08++ = 0x0;
 		    *FSE->ptr.u32++ = (val >> 32);
 		    *FSE->ptr.u32++ = (val & 0xffffffff);	  
@@ -39,15 +39,13 @@ FSE_delay_ns(struct FSE_ucode *FSE, u64 val)
 	
 	else {
 	  
-	 val = val & 0xffff;
-	   
-	   if( val % 1000 != 0 ) {
-	     
+	    if (val % 1000 >= 32) {
 		    *FSE->ptr.u08++ = 0x01;
-		    *FSE->ptr.u16++ = val % 1000;
-		}
-	   if( val > 999 ){
-	 
+		    *FSE->ptr.u16++ = (val % 1000) / 32;;
+		}	
+	
+	    if (val > 999) {
+		    
 		    *FSE->ptr.u08++ = 0x02;
 		    *FSE->ptr.u16++ = val/1000;
 		}
@@ -55,6 +53,7 @@ FSE_delay_ns(struct FSE_ucode *FSE, u64 val)
 	}
 	  
 }
+
 
 FSE_write(struct FSE_ucode *FSE, u32 reg, u32 val)
 {
