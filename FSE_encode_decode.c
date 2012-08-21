@@ -28,10 +28,12 @@ int main(int argc, char **argv)
 {
 	struct FSE_ucode code, *ucode = &code;
 	int i, size, reg, val, mask;
-	u8 msg[2];
+	u8 msg[5];
 	msg[0] = 0x05;
-	msg[1] = 0x06;
-	
+	msg[1] = 0x46;
+	msg[2] = 0x36;
+	msg[3] = 0x26;
+	msg[4] = 0x16;
 	/* create a script */
 	FSE_init(ucode);
 	FSE_write(ucode, 0x12345678, 0xdeadbeef);
@@ -39,7 +41,7 @@ int main(int argc, char **argv)
 	FSE_wait(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
 	FSE_mask(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
 	FSE_delay_ns(ucode, 15649);
-	FSE_send_msg(ucode, 2, msg);
+	FSE_send_msg(ucode, 5, msg);
 	FSE_fini(ucode);
 	
 	/* print the generated code */
@@ -100,7 +102,7 @@ int main(int argc, char **argv)
 				
 			case 0x20:
 				size = le16(ucode->ptr.u08, &i);
-				printf(" FSE_send_msg(0x%02x", size);
+				printf("FSE_send_msg(%d", size);
 				while(size) 
 				{
 				      printf(",0x%02x", le8(ucode->ptr.u08, &i));      
