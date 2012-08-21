@@ -33,6 +33,8 @@ int main(int argc, char **argv)
 	FSE_init(ucode);
 	FSE_write(ucode, 0x12345678, 0xdeadbeef);
 	FSE_write(ucode, 0x12345678, 0xef);
+	FSE_wait(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
+	FSE_mask(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
 	FSE_fini(ucode);
 	
 	/* print the generated code */
