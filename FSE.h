@@ -19,12 +19,8 @@ FSE_init(struct FSE_ucode *FSE)
 static inline void
 FSE_fini(struct FSE_ucode *FSE)
 {
-	//*FSE->ptr.u08 = 0xff; 
-	//FSE->ptr.u08 = FSE->data;
-	do {
-		*FSE->ptr.u08++ = 0xff;
-		FSE->len = FSE->ptr.u08 - FSE->data;
-	} while (FSE->len & 3);
+	*FSE->ptr.u08++ = 0xff;
+	FSE->len =FSE->ptr.u08 - FSE->data;
 	FSE->ptr.u08 = FSE->data;
 }
 
