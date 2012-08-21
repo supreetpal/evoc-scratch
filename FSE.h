@@ -19,7 +19,12 @@ FSE_init(struct FSE_ucode *FSE)
 static inline void
 FSE_fini(struct FSE_ucode *FSE)
 {
-	*FSE->ptr.u08 = 0xff; 
+	//*FSE->ptr.u08 = 0xff; 
+	//FSE->ptr.u08 = FSE->data;
+	do {
+		*FSE->ptr.u08++ = 0xff;
+		FSE->len = FSE->ptr.u08 - FSE->data;
+	} while (FSE->len & 3);
 	FSE->ptr.u08 = FSE->data;
 }
 
@@ -58,12 +63,12 @@ FSE_write(struct FSE_ucode *FSE, u32 reg, u32 val)
 {
 	if (val & 0xff == val) {
 		*FSE->ptr.u08++ = 0x11;
-		*FSE->ptr.u08++ = val;
 		*FSE->ptr.u32++ = reg;		
+		*FSE->ptr.u08++ = val;
 	} else {
 		*FSE->ptr.u08++ = 0x10;
-		*FSE->ptr.u32++ = val;
 		*FSE->ptr.u32++ = reg;			
+		*FSE->ptr.u32++ = val;
 	}
 
 }

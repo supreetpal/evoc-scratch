@@ -3,24 +3,28 @@
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
+typedef unsigned long long u64;
 #include "FSE.h"
 
-u32 le32 (const u8 *buf, int *off) {
+u32 le32 (const u8 *buf, int *off) 
+{
 	*off = *off + 4;
 	return buf[*off - 4] | buf[*off - 3] << 8 | buf[*off - 2] << 16 | buf[*off - 1] << 24;
 }
 
-u16 le16 (const u8 *buf, int *off) {
+u16 le16 (const u8 *buf, int *off) 
+{
 	*off = *off + 2;
 	return buf[*off - 2] | buf[*off - 1] << 8;
 }
 
-u8 le8 (const u8 *buf, int *off) {
+u8 le8 (const u8 *buf, int *off) 
+{
 	*off = *off + 1;
 	return buf[(*off) - 1];
 }
 
-int main(int argc, char **argv)
+int main(int argc, char **argv) 
 {
 	struct FSE_ucode code, *ucode = &code;
 	int i,size;
@@ -29,7 +33,6 @@ int main(int argc, char **argv)
 	FSE_init(ucode);
 	FSE_write(ucode, 0x12345678, 0xdeadbeef);
 	FSE_write(ucode, 0x12345678, 0xef);
-	//FSE_send_msg(ucode, 5, msg);
 	FSE_fini(ucode);
 	
 	/* print the generated code */
@@ -46,33 +49,49 @@ int main(int argc, char **argv)
 	i = 0;
 	while (i < ucode->len) {
 		u8 opcode = le8(ucode->ptr.u08, &i);
+		printf("opcode = 0x%02x\n", opcode);
+		
 		switch (opcode) {
 		  
+			case 0x00:
+				printf("FSE_delay(0x%08x 0x%08x)\n",le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
+				break;
+				
 			case 0x01:
-				  printf("FSE_delay(0x%08x)\n",le32(ucode->ptr.u08, &i));
+				printf("FSE_delay(0x%04x)\n",le16(ucode->ptr.u08, &i));
+				break;
 				  
 			case 0x02:
-				  printf("FSE_delay(0x%08x)\n",le32(ucode->ptr.u08, &i));
-				  
+				printf("FSE_delay(0x%04x)\n",le16(ucode->ptr.u08, &i));
+				break;
+				
 			case 0x10:
-				printf("FSE_write(0x%08x, 0x%02x);\n",le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
+				printf("FSE_write(0x%08x, 0x%08x);\n",le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
 				break;
 			
 			case 0x11:
-				printf("FSE_write(0x%08x, 0x%08x);\n",le8(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
+				printf("FSE_write(0x%02x, 0x%08x);\n",le32(ucode->ptr.u08, &i), le8(ucode->ptr.u08, &i));
 				break;
 			
+			case 0x12:
+				printf("FSE_mask(0x%08x, 0x%08x, 0x%08x);\n",le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
+				break;
+				
+			case 0x13:
+				printf("FSE_wait(0x%08x, 0x%08x, 0x%08x);\n",le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i), le32(ucode->ptr.u08, &i));
+				break;
+				
 			case 0x20:
 				size = le16(ucode->ptr.u08, &i);
 				printf(" FSE_send_msg(0x%08x,", size);
-				while(size)
+				while(size) 
 				{
 				      printf("0x%08x ,", le8(ucode->ptr.u08, &i));      
 				      size--;
 				}
 				break; 
 			
-			case 0x7f:
+			case 0xff:
 				printf("exit\n");
 				break;
 			
