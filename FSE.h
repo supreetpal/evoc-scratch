@@ -57,7 +57,7 @@ FSE_delay_ns(struct FSE_ucode *FSE, u64 delay_ns)
 static inline void
 FSE_write(struct FSE_ucode *FSE, u32 reg, u32 val)
 {
-	if (val & 0xff == val) {
+	if ((val & 0xff) == val) {
 		*FSE->ptr.u08++ = 0x11;
 		*FSE->ptr.u32++ = reg;		
 		*FSE->ptr.u08++ = val;
