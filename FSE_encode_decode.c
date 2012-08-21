@@ -40,39 +40,8 @@ int main(int argc, char **argv)
 	FSE_write(ucode, 0x12345678, 0xef);
 	FSE_wait(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
 	FSE_mask(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_delay_ns(ucode, 15649);
+	FSE_delay_ns(ucode, 9999999);
 	FSE_send_msg(ucode, 5, msg);
-	FSE_write(ucode, 0x12345678, 0xdeadbeef);
-	FSE_write(ucode, 0x12345678, 0xef);
-	FSE_wait(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_mask(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_delay_ns(ucode, 15649);
-	FSE_send_msg(ucode, 5, msg);
-	FSE_write(ucode, 0x12345678, 0xdeadbeef);
-	FSE_write(ucode, 0x12345678, 0xef);
-	FSE_wait(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_mask(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_delay_ns(ucode, 15649);
-	FSE_send_msg(ucode, 5, msg);
-	FSE_write(ucode, 0x12345678, 0xdeadbeef);
-	FSE_write(ucode, 0x12345678, 0xef);
-	FSE_wait(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_mask(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_delay_ns(ucode, 15649);
-	FSE_send_msg(ucode, 5, msg);
-	FSE_write(ucode, 0x12345678, 0xdeadbeef);
-	FSE_write(ucode, 0x12345678, 0xef);
-	FSE_wait(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_mask(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_delay_ns(ucode, 15649);
-	FSE_send_msg(ucode, 5, msg);
-	FSE_write(ucode, 0x12345678, 0xdeadbeef);
-	FSE_write(ucode, 0x12345678, 0xef);
-	FSE_wait(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_mask(ucode, 0x12345678, 0x0f0f0f0f, 0xdeadbeef);
-	FSE_delay_ns(ucode, 15649);
-	FSE_send_msg(ucode, 5, msg);
-	
 	FSE_fini(ucode);
 	
 	/* print the generated code */
