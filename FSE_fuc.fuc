@@ -1,0 +1,87 @@
+/* FSE_parse_opcode: parsing opcodes from generated code
+ * In: 	$r10: pointer to generated code
+ */
+
+#FSE_parse_opcode:
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+	push $r5
+	push $r6
+	push $r7
+	push $r8
+	push $r9
+	
+	/* store the opcodes */
+	mov $r1 0x00
+	mov $r2 0x01
+	mov $r3 0x02
+	mov $r4 0x10
+	mov $r5 0x11
+	mov $r6 0x12
+	mov $r7 0x13
+	mov $r8 0x20
+	mov $r9 0xff
+	
+	/* load the first position of generated code */
+	ld b8 $r11 D[$r10 + 0]
+	
+	cmpu b8 $r11 $r1
+	bra e #FSE_delay_ns 
+	
+	cmpu b8 $r11 $r2
+	bra e #FSE_delay_ns
+	
+	cmpu b8 $r11 $r3
+	bra e #FSE_delay_ns
+	
+	cmpu b8 $r11 $r4
+	bra e #FSE_write
+	
+	cmpu b8 $r11 $r5
+	bra e #FSE_write
+	
+	cmpu b8 $r11 $r6
+	bra e #FSE_mask
+	
+	cmpu b8 $r11 $r7
+	bra e #FSE_wait
+	
+	cmpu b8 $r11 $r8
+	bra e #FSE_send_msg
+	
+	cmpu b8 $r11 $r9
+	bra e #FSE_exit
+	
+	/* unknown opcode*/
+	mov $r10 0
+	call #FSE_exit
+	
+	
+#FSE_delay_ns:
+
+#FSE_write:
+
+#FSE_mask:
+
+#FSE_wait:
+
+#FSE_send_msg:
+
+#FSE_exit:
+	
+	pop $r9
+	pop $r8
+	pop $r7
+	pop $r6
+	pop $r5
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+	
+	ret
+	
+
+	
