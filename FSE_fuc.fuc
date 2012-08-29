@@ -65,53 +65,59 @@
 #FSE_delay_ns_fr:
 	ld b32 $r10 D[$r15 + 1]	
 	ld b32 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
 	
 	call #sleep_ns
 	
-	add b32 $r10 $r15 9	
+	add b32 $r10 $r1 9	
 	call #FSE_parse_opcode_loop
 	
 #FSE_delay_ns:
 	mov $r10 0x0
 	ld b32 $r11 D[$r15 + 1]
+	mov b32 $r1 $r15
 	
 	call #sleep_ns
 	
-	add b32 $r10 $r15 5	
+	add b32 $r10 $r1 5	
 	call #FSE_parse_opcode_loop
 	
 #FSE_delay_us:
 	mov $r10 0x0
 	ld b32 $r11 D[$r15 + 1]
 	mulu $r11 1000
+	mov b32 $r1 $r15
 	
 	call #sleep_ns
 	
-	add b32 $r10 $r15 5	
+	add b32 $r10 $r1 5	
 	call #FSE_parse_opcode_loop	
 		
 #FSE_write:
 	ld b32 $r10 D[$r15 + 1]	
 	ld b32 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
 	
 	call #mmwr
 	
-	add b32 $r10 $r15 9	
+	add b32 $r10 $r1 9	
 	call #FSE_parse_opcode_loop
 	
 #FSE_write_b8:
 	ld b32 $r10 D[$r15 + 1]	
 	ld b8 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
 	
 	call #mmwr
 	
-	add b32 $r10 $r15 6	
+	add b32 $r10 $r1 6	
 	call #FSE_parse_opcode_loop
 
 #FSE_mask:
 	ld b32 $r10 D[$r15 + 1]
 	ld b32 $r11 D[$r15 + 5]
 	ld b32 $r12 D[$r15 + 9]
+	mov b32 $r1 $r15
 	
 	mov b32 $r13 $r10
 	call #mmrd
@@ -123,13 +129,14 @@
 	
 	call #mmwr
 		
-	add b32 $r10 $r15 13	
+	add b32 $r10 $r1 13	
 	call #FSE_parse_opcode_loop
 
 #FSE_wait:
 	ld b32 $r10 D[$r15 + 1]
 	ld b32 $r11 D[$r15 + 5]
 	ld b32 $r12 D[$r15 + 9]
+	mov b32 $r1 $r15
 		
 #FSE_wait_loop:
 	mov b32 $r13 $r10
@@ -139,7 +146,7 @@
 	cmpu b32 $r11 $r12
 	bra e #FSE_wait_loop
 	
-	add b32 $r10 $r15 13	
+	add b32 $r10 $r1 13	
 	call #FSE_parse_opcode_loop
 
 #FSE_send_msg:
