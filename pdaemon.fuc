@@ -1196,6 +1196,27 @@ temp_main_fan_set:
  *                                     *
  ***************************************/
 
+/* aligned load */
+/* IN: $r10: addr
+ * OUT: $r10: val = D[addr]
+ */
+ld_32:
+	ld b8 $r11 D[$r10]
+	ld b8 $r12 D[$r10 + 1]
+	ld b8 $r13 D[$r10 + 2]
+	ld b8 $r14 D[$r10 + 3]
+	
+	shl b8 $r12 $r12 8
+	shl b8 $r13 $r13 16
+	shl b8 $r14 $r14 24
+	
+	or $r10 $r10 $r11
+	or $r10 $r10 $r12
+	or $r10 $r10 $r13
+	or $r10 $r10 $r14
+	
+	ret
+
 /* FSE_parse_opcode: parsing opcodes from generated code
  * In: 	$r10: pointer to generated code
  *Out: none
