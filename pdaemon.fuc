@@ -1217,19 +1217,23 @@ ld_32:
 	ret
 	
 ld_16:
+	clear b32 $r11
+	
 	ld b8 $r11 D[$r10 + 1]  
 	shl b32 $r11 8 
 	
 	ld b8 $r11 D[$r10 + 0]  
 	
-	mov b32 $r10 $r11  
+	mov b16 $r10 $r11  
 		
 	ret
 	
 ld_08:	
+	clear b32 $r11
+	
 	ld b8 $r11 D[$r10 + 0]  
 	
-	mov b32 $r10 $r11  
+	mov b8 $r10 $r11  
 		
 	ret
 	
