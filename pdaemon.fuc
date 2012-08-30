@@ -1201,25 +1201,19 @@ temp_main_fan_set:
  * OUT: $r10: val = D[addr]
  */
 ld_32:
-	clear b32 $r11
-	clear b32 $r12
-	clear b32 $r13
-	clear b32 $r14
+	ld b8 $r11 D[$r10 + 3]  
+	shl b32 $r11 8  
 	
-	ld b8 $r11 D[$r10]
-	ld b8 $r12 D[$r10 + 1]
-	ld b8 $r13 D[$r10 + 2]
-	ld b8 $r14 D[$r10 + 3]
+	ld b8 $r11 D[$r10 + 2]  
+	shl b32 $r11 8  
 	
-	shl b32 $r12 $r12 8
-	shl b32 $r13 $r13 16
-	shl b32 $r14 $r14 24
+	ld b8 $r11 D[$r10 + 1]  
+	shl b32 $r11 8 
 	
-	mov $r10 $r11
-	or $r10 $r10 $r12
-	or $r10 $r10 $r13
-	or $r10 $r10 $r14
+	ld b8 $r11 D[$r10 + 0]  
 	
+	mov b32 $r10 $r11  
+		
 	ret
 
 /* FSE_parse_opcode: parsing opcodes from generated code
