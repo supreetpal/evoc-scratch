@@ -121,7 +121,7 @@ ptr_temp_temp_target: .b32 #temp_temp_target
 ptr_temp_critical: .b32 #temp_critical
 ptr_temp_down_clock: .b32 #temp_down_clock
 ptr_temp_fan_boost: .b32 #temp_fan_boost
-ptr_hwsq_name: .b32 #hwsq_name
+//ptr_FSE_name: .b32 #FSE_name
 
 ifdef(`NVA3',
 .section #nva3_pdaemon_data
@@ -136,7 +136,7 @@ ifdef(`NVA3',
  * 0x500	0xa00		dispatch
  * 0xa00	0xb00		rdispatch
  * 0xb00	0xc00		temp_mgmt
- * 0xc00	0xd00		hwsq
+ * 0xc00	0xd00		FSE
  */
 /* stack */
 stack_begin: .b8 0xfe
@@ -151,7 +151,7 @@ core_pdaemon_freq: .b32 202000000 // 202MHz
 /* dispatch */
 dispatch_fence: .b32 0
 .skip 0xc
-dispatch_pid_table:	.b32 #core_dispatch #temp_dispatch #hwsq_dispatch 0x00
+dispatch_pid_table:	.b32 #core_dispatch #temp_dispatch #FSE_parse_opcode 0x00
 			.b32 0x00 0x00 0x00 0x00
 			.b32 0x00 0x00 0x00 0x00
 			.b32 0x00 0x00 0x00 0x00
@@ -185,8 +185,8 @@ temp_fan_boost: .b8 90
 temp_fan_start: .b8 30
 .align 0x100
 
-/* hwsq */
-hwsq_name: .b8 0x68 0x77 0x73 0x71 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0/* hwsq */
+/* FSE */
+FSE_name: .b8 0x68 0x77 0x73 0x71 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0/* FSE */
 .align 0x100
 
 
@@ -1192,22 +1192,188 @@ temp_main_fan_set:
 
 /***************************************
  *                                     *
- *               HWSQ                  *
+ *               FSE                   *
  *                                     *
  ***************************************/
 
-/* hwsq_dispatch: hwsq's dispatch handler
- * In: 	$r10: packet size
- * 	$r11: packet ptr
- * Out:	None
+/* FSE_parse_opcode: parsing opcodes from generated code
+ * In: 	$r10: pointer to generated code
+ *Out: none
  */
-hwsq_dispatch:
-	/* parse the command header */
-	call #dispatch_parse_cmd
 
-	/* let's exec the command */
-	movw $r14 #hwsq_name
-	call #dispatch_exec_cmd
+FSE_parse_opcode:
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+	push $r5
+	push $r6
+	push $r7
+	push $r8
+	push $r9
+	
+	/* store the opcodes */
+	mov $r1 0x00
+	mov $r2 0x01
+	mov $r3 0x02
+	mov $r4 0x10
+	mov $r5 0x11
+	mov $r6 0x12
+	mov $r7 0x13
+	mov $r8 0x20
+	mov $r9 0xff
+	
+	mov b32 $r15 $r10
+	
+	/* load the first position of generated code */
+	ld b8 $r11 D[$r15 + 0]
+	
+	cmpu b8 $r11 $r1
+	bra e #FSE_delay_ns_fr 
+	
+	cmpu b8 $r11 $r2
+	bra e #FSE_delay_ns
+	
+	cmpu b8 $r11 $r3
+	bra e #FSE_delay_us
+	
+	cmpu b8 $r11 $r4
+	bra e #FSE_write
+	
+	cmpu b8 $r11 $r5
+	bra e #FSE_write_b8
+	
+	cmpu b8 $r11 $r6
+	bra e #FSE_mask
+	
+	cmpu b8 $r11 $r7
+	bra e #FSE_wait
+	
+	cmpu b8 $r11 $r8
+	bra e #FSE_send_msg
+	
+	cmpu b8 $r11 $r9
+	bra e #FSE_exit
+	
+	/* unknown opcode*/
+	mov $r10 0
+	call #FSE_exit
+	
+	
+FSE_delay_ns_fr:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
+	
+	call #sleep_ns
+	
+	add b32 $r10 $r1 9	
+	call #FSE_parse_opcode
+	
+FSE_delay_ns:
+	mov $r10 0x0
+	ld b32 $r11 D[$r15 + 1]
+	mov b32 $r1 $r15
+	
+	call #sleep_ns
+	
+	add b32 $r10 $r1 5	
+	call #FSE_parse_opcode
+	
+FSE_delay_us:
+	mov $r10 0x0
+	ld b32 $r11 D[$r15 + 1]
+	mulu $r11 1000
+	mov b32 $r1 $r15
+	
+	call #sleep_ns
+	
+	add b32 $r10 $r1 5	
+	call #FSE_parse_opcode	
+		
+FSE_write:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
+	
+	call #mmwr
+	
+	add b32 $r10 $r1 9	
+	call #FSE_parse_opcode
+
+FSE_write_b8:
+	ld b32 $r10 D[$r15 + 1]	
+	ld b8 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
+	
+	call #mmwr
+	
+	add b32 $r10 $r1 6	
+	call #FSE_parse_opcode
+
+FSE_mask:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	ld b32 $r12 D[$r15 + 9]
+	mov b32 $r1 $r15
+	
+	mov b32 $r13 $r10
+	call #mmrd
+	
+	and $r11 $r10 $r11
+	or $r11 $r11 $r12 
+	
+	mov b32 $r10 $r13
+	
+	call #mmwr
+		
+	add b32 $r10 $r1 13	
+	call #FSE_parse_opcode
+
+FSE_wait:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	ld b32 $r12 D[$r15 + 9]
+	mov b32 $r1 $r15
+		
+FSE_wait_loop:
+	mov b32 $r13 $r10
+	call #mmrd
+	
+	and $r11 $r10 $r11
+	cmpu b32 $r11 $r12
+	bra e #FSE_wait_loop
+	
+	add b32 $r10 $r1 13	
+	call #FSE_parse_opcode
+
+FSE_send_msg:
+	mov $r10 0x2
+	ld b16 $r12 D[$r15 + 1]
+	add b32 $r13 $r15 2
+	
+	/*store incremented pointer*/
+	add b32 $r1 $r13 $r12
+	
+	/* Add value $r11:msg_id */
+	
+	call #rdispatch_send_msg
+	
+	mov b32 $r10 $r1	
+	call #FSE_parse_opcode
+
+FSE_exit:
+	
+	pop $r9
+	pop $r8
+	pop $r7
+	pop $r6
+	pop $r5
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+	
 	ret
 
 /* main:
