@@ -1229,7 +1229,7 @@ ld_16:
 	ret
 	
 ld_08:	
-	clear b8 $r11
+	clear b32 $r11
 	
 	ld b8 $r11 D[$r10 + 0]  
 	
@@ -1261,9 +1261,9 @@ main_loop:
 	mov $r11 0xc04
 	st b32 D[$r11] $r10
 	
-	mov $r10 0xd10
-	call #ld_16
-	mov $r11 0xc10
+	mov $r10 0xd06
+	call #ld_08
+	mov $r11 0xc06
 	st b32 D[$r11] $r10
 	
 	mov $r10 0xd08
