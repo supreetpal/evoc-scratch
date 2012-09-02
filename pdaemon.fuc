@@ -1224,7 +1224,7 @@ ld_16:
 	
 	ld b8 $r11 D[$r10 + 0]  
 	
-	mov b16 $r10 $r11  
+	mov b32 $r10 $r11  
 		
 	ret
 	
@@ -1233,7 +1233,7 @@ ld_08:
 	
 	ld b8 $r11 D[$r10 + 0]  
 	
-	mov b8 $r10 $r11  
+	mov b32 $r10 $r11  
 		
 	ret
 	
@@ -1259,17 +1259,17 @@ main_loop:
 	mov $r10 0xd04
 	call #ld_08
 	mov $r11 0xc04
-	st b8 D[$r11] $r10
+	st b32 D[$r11] $r10
 	
-	mov $r10 0xd06
-	call #ld_08
-	mov $r11 0xc06
-	st b8 D[$r11] $r10
+	mov $r10 0xd10
+	call #ld_16
+	mov $r11 0xc10
+	st b32 D[$r11] $r10
 	
 	mov $r10 0xd08
 	call #ld_16
 	mov $r11 0xc08
-	st b16 D[$r11] $r10
+	st b32 D[$r11] $r10
 	
 	
 	/* sleep_ns(5s) */
