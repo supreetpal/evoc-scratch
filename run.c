@@ -14,7 +14,7 @@ typedef enum { get = 0, set = 1} resource_op;
 #define PDAEMON_DISPATCH_RING 0x00000550
 #define PDAEMON_DISPATCH_DATA 0x00000590
 #define PDAEMON_DISPATCH_DATA_SIZE 0x00000370
-#define RDISPATCH_SIZE 0x100
+#define RDISPATCH_SIZE 0x00000100
 
 #define NV04_PTIMER_TIME_0                                 0x00009400
 #define NV04_PTIMER_TIME_1                                 0x00009410
@@ -47,15 +47,15 @@ static bool data_segment_read(unsigned int cnum, uint16_t base, uint16_t length,
 	base_shift = (base - aligned_base) * 8;
 
 	nva_wr32(cnum,0x10a1c8, 0x02000000 | aligned_base);
-		while(i < length) {
-			uint32_t data = nva_rd32(cnum, 0x10a1cc);
-	
-			uint16_t shift;
-			do {
-				shift = (base_shift + (i * 8)) % 32;
-				buf[i] = (data >> shift) & 0xff;
-				i++;
-			} while (i < length && shift < 24);
+	while(i < length) {
+		uint32_t data = nva_rd32(cnum, 0x10a1cc);
+
+		uint16_t shift;
+		do {
+			shift = (base_shift + (i * 8)) % 32;
+			buf[i] = (data >> shift) & 0xff;
+			i++;
+		} while (i < length && shift < 24);
 	}
 
 	return true;
@@ -114,7 +114,7 @@ static void data_segment_upload_u8(unsigned int cnum, uint16_t base,
 
 static void pdaemon_upload(unsigned int cnum) {
 	int i;
-	uint32_t code_size;
+	uint32_t code_size, max_code_size, max_data_size;
 	uint32_t *code;
 
 	/* reboot PDAEMON */
@@ -136,10 +136,9 @@ static void pdaemon_upload(unsigned int cnum) {
 			  sizeof(nvd9_pdaemon_data)/sizeof(*nvd9_pdaemon_data));
 	}
 
-	/* Writing test data to 0xd00.
-	 * TODO: Get rid of this when we are done testing
-	 */
- 	uint8_t buffer[0x100] = { 0 };
+	/* Writing test data to 0xd00 */
+ 	uint8_t buffer[0x100];
+
 	for ( i = 0; i < 0x100; i++)
 	    buffer[i] = i;
 	data_segment_upload_u8(cnum, 0xd00, buffer, 0x100);
@@ -164,9 +163,22 @@ static void pdaemon_upload(unsigned int cnum) {
 	nva_wr32(cnum, 0x10a10c, 0x0);
 	nva_wr32(cnum, 0x10a100, 0x2);
 
-	printf("Uploaded pdaemon microcode: data = %lx bytes, code = %lx bytes\n",
-			sizeof(nva3_pdaemon_data)/sizeof(*nva3_pdaemon_data),
-			sizeof(nva3_pdaemon_code)/sizeof(*nva3_pdaemon_code));
+	max_code_size = (nva_rd32(cnum, 0x10a0108) & 0x1ff) << 8;
+	max_data_size = (nva_rd32(cnum, 0x10a0108) & 0x1fe00) >> 1;
+
+	if (nva_cards[cnum].chipset < 0xd9) {
+		printf("Uploaded pdaemon microcode: data = 0x%lx bytes(%li%%), code = 0x%lx bytes(%li%%)\n",
+			sizeof(nva3_pdaemon_data),
+		       (sizeof(nva3_pdaemon_data) * 100) / max_data_size,
+			sizeof(nva3_pdaemon_code),
+		       (sizeof(nva3_pdaemon_code) * 100) / max_code_size);
+	} else {
+		printf("Uploaded pdaemon microcode: data = 0x%lx bytes(%li%%), code = 0x%lx bytes(%li%%)\n",
+			sizeof(nvd9_pdaemon_data),
+		        (sizeof(nvd9_pdaemon_data) * 100) / max_data_size,
+			sizeof(nvd9_pdaemon_code),
+			(sizeof(nvd9_pdaemon_code) * 100) / max_data_size);
+	}
 }
 
 static void pdaemon_RB_state_dump(unsigned int cnum)
@@ -320,17 +332,30 @@ static bool pdaemon_read_resource(int cnum, struct pdaemon_resource_command *cmd
 	return true;
 }
 
-// RING_WRAP_AROUND(`current_pos', `bump_increment', `ring_base', `ring_size')
-uint32_t RING_WRAP_AROUND(int cur_pos, int bump, uint32_t ring_base, uint32_t ring_size)
+static uint32_t ring_wrap_around(int cur_pos, int bump, uint32_t ring_base, uint32_t ring_size)
 {
-	uint32_t output;
-	output = cur_pos + bump;
-	output = output % ring_size;
-	output = output + ring_base;
+	return ((cur_pos + bump) % ring_size) + ring_base;  
+}
+
+void data_segment_read_ring(unsigned int cnum, uint32_t ring_base, 
+			    uint32_t ring_size, uint32_t offset, uint32_t length, uint8_t *buf)
+{
+	uint16_t copied_bytes = 0;
+	uint16_t cur_offset = offset;
 	
-	return output;  
-	}
-	
+	do {
+		uint32_t max_bytes_to_copy = ring_base + ring_size - cur_offset;
+		uint32_t bytes_to_copy = (length - copied_bytes);
+		
+		if (bytes_to_copy > max_bytes_to_copy)
+			bytes_to_copy = max_bytes_to_copy;
+
+		data_segment_read(cnum, cur_offset, bytes_to_copy, buf + copied_bytes);
+		cur_offset = ring_wrap_around(cur_offset, bytes_to_copy, 0xa00, RDISPATCH_SIZE);
+		
+		copied_bytes += bytes_to_copy;
+	} while (copied_bytes < length);
+}
 
 struct rdispatch_msg {
   
@@ -345,46 +370,33 @@ int rdispatch_read_msg(int cnum, struct rdispatch_msg *msg){
 	uint32_t RFIFO_GET;
 	uint32_t RFIFO_PUT;
 	uint8_t header_buf[0x4];
-	int i = 0;
-		  
+
 	RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
 	RFIFO_PUT = nva_rd32(cnum, 0x10a4c8);
-		
-	if ( RFIFO_GET == RFIFO_PUT ){
-	      printf( " No messages in ring\n "); 
-	      return 1;
-	}
-		  
-	else {  
-		    
-	    data_segment_read(cnum, RFIFO_GET, 0x4, header_buf);
-	    RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 3, 0xa00, RDISPATCH_SIZE);
-		    
-	    msg->pid = header_buf[0];
-	    msg->msg_id = header_buf[1];
-	    msg->payload_size = header_buf[2];
-		  
-	    while ( i < header_buf[2]){
-		      
-	      data_segment_read(cnum, RFIFO_GET, 0x1, msg->payload);		  
-	      RFIFO_GET = RING_WRAP_AROUND( RFIFO_GET, 1, 0xa00, RDISPATCH_SIZE);
-		      
-	      i++;
-	    }   
-		    
-	    RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
-	    nva_wr32(cnum, 0x10a4cc, RING_WRAP_AROUND( RFIFO_GET, 3 + header_buf[2], 0xa00, RDISPATCH_SIZE));
 
+	if ( RFIFO_GET == RFIFO_PUT ){
+		return 1;
+	} else {
+		//data_segment_read(cnum, RFIFO_GET, 0x4, header_buf);
+		data_segment_read_ring(cnum, 0xa00, RDISPATCH_SIZE, RFIFO_GET, 4, header_buf);
+		RFIFO_GET = ring_wrap_around( RFIFO_GET, 3, 0xa00, RDISPATCH_SIZE);
+
+		msg->pid = header_buf[0];
+		msg->msg_id = header_buf[1];
+		msg->payload_size = header_buf[2];
+
+		data_segment_read_ring(cnum, 0xa00, RDISPATCH_SIZE, RFIFO_GET, header_buf[2], msg->payload);
+
+		RFIFO_GET = nva_rd32(cnum, 0x10a4cc);
+		nva_wr32(cnum, 0x10a4cc, ring_wrap_around( RFIFO_GET, 3 + header_buf[2], 0xa00, RDISPATCH_SIZE));
 	}
-		    
-	    return 0;
+    
+	return 0;
 }
+
 
 int main(int argc, char **argv)
 {
-	struct pdaemon_resource_command cmd;
-	struct rdispatch_msg msg;
-	int i = 0;
 		
 	if (nva_init()) {
 		fprintf (stderr, "PCI init failure!\n");
@@ -409,33 +421,8 @@ int main(int argc, char **argv)
 	pdaemon_upload(cnum);
 	usleep(1000);
 
-	/* test that the d00 are is well initialized */
-	data_segment_dump(cnum, 0xd00, 0x100);
-
-	while (1) {
-	
-	//Does not read if pdaemon writes the entire ring before reading starts.
-	//Does not read the first 4locations.
-	
-		if (rdispatch_read_msg(cnum, &msg) != 0)
-			usleep(1000000);
-		
-		else{
-		  
-		  printf(" pid = ");
-		  printf("%08x\n", msg.pid);
-		  printf(" msg_id = ");
-		  printf("%08x\n", msg.msg_id);
-		  printf(" payload_size = ");
-		  printf("%08x\n", msg.payload_size);
-		
-		  	      
-		  for( i = 0; i < msg.payload_size; i++)
-		        printf("%08x\n", msg.payload[i]);
-		  
-	    }
-		
-	}
+	data_segment_dump(cnum, 0xc00, 0x10);
+	usleep(5000);
 
 	return 0;
 }
