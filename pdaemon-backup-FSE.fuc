@@ -1,0 +1,1463 @@
+/*
+ *                               - PDAEMON -
+ *
+ * This code is meant to be run on PDAEMON. It exports some services to the
+ * host and does some operations such as automatic fan management.
+ * Each operations are done in separated "processes". Up to 16 processes can
+ * execute simultaneously.
+ *
+ * Some parts of this code are based on Maarten Lankhorst's previous work.
+ *
+ * = Calling conventions =
+ * The calling conventions are simple:
+ * - $r0 = 0
+ * - Function parameters are passed in $r10-15
+ * - Return value is passed in $r10
+ * - A function shouldn't modify $r0-$r9 unless it restores their original
+ * 	values afterwards (push/pop)
+ * - That's it for now
+ *
+ * = Processes =
+ * Each process is composed of:
+ * - A PID (not actually stored anywhere but in #dispatch_pid_table
+ * - Name of the process: First 10 bytes of the dedicated address space
+ * - a command handler: referenced by #dispatch_pid_table to map pid <-> handler
+ * - more to come!
+ *
+ * = Host -> pdaemon communication =
+ * The host can send commands to each process:
+ * - A ring buffer of 16 entries is operated by the classic FIFO_GET/PUT combo
+ * - Each entry is composed of:
+ * 	- u4: pid		// process who should receive this command
+ * 	- u12: cmd_size		// size of the command buffer
+ * 	- u16: cmd_ptr		// pointer to some place in the data .section
+ * - the command pointer should point to some place located in
+ * 	[dispatch_data, ptr_temp_name[
+ * - commands are process-specific and are documented inside the
+ * 	process's dispatch function.
+ *
+ * Some processes may want to expose their address space so as the host can
+ * change some parameters. It is done by writing a header at position 0 of the
+ * memory area pointed by cmd_ptr. Some memory space should also be allocated to
+ * store the value to be read/set. The header format is:
+ * 	- u1: type (get = 0, set = 1)
+ * 	- u15: value size
+ * 	- u16 resource_id
+ *
+ * = Pdaemon -> host communication =
+ * TODO
+ *
+ * Author: Martin Peres <martin.peres@labri.fr>
+ */
+
+/*
+ * some notes to self about the envyas/fuc syntax:
+ * - One cannot load a 32 bits immediate into a reg, one would need to:
+ * 	movw $rx (value & 0xffff)
+ * 	sethi $rx (value & 0xffff0000)
+ *
+ * - Indexed access (I[$rx + imm]). imm is limited to 0x3fc.
+ */
+
+// IOADDR(address, output_reg)
+ifdef(`NVA3', `define(`IOADDR', `movw $2 $1
+	sethi $2 0
+	shl b32 $2 6')'
+,define(`IOADDR', `movw $2 $1
+	sethi $2 0')
+)
+
+// RING_WRAP_AROUND(`current_pos', `bump_increment', `ring_base', `ring_size', `output_reg')
+define(`RING_WRAP_AROUND', `add b32 $5 $1 $2
+	mod $5 $5 $4
+	add b32 $5 $5 $3')
+
+/* define the IO reg addresses */
+.equ #io_INTR_CLEAR	0x004
+.equ #io_INTR		0x008
+.equ #io_INTR_EN_SET	0x010
+.equ #io_INTR_ROUTING	0x01c
+.equ #io_TIME_LOW	0x02c
+.equ #io_TIME_HIGH	0x030
+.equ #io_FIFO_0_PUT	0x4a0
+.equ #io_FIFO_0_GET	0x4b0
+.equ #io_FIFO_INTR	0x4c0
+.equ #io_FIFO_INTR_EN	0x4c4
+.equ #io_RFIFO_PUT	0x4c8
+.equ #io_RFIFO_GET	0x4cc
+.equ #io_INTR11		0x688
+.equ #io_MMIO_ADDR	0x7a0
+.equ #io_MMIO_VAL	0x7a4
+.equ #io_MMIO_CTRL	0x7ac
+
+/* define some other constants */
+.equ #const_rdispatch_size 0x100
+
+/* store some important pointers */
+ifdef(`NVA3',
+.section #nva3_pdaemon_ptrs
+,
+.section #nvd9_pdaemon_ptrs
+)
+ptr_data_stack_begin: .b32 #stack_begin
+ptr_data_stack_end: .b32 #stack_end
+ptr_core_name: .b32 #core_name
+ptr_core_pdaemon_freq: .b32 #core_pdaemon_freq
+ptr_dispatch_fence: .b32 #dispatch_fence
+ptr_dispatch_pid_table: .b32 #dispatch_pid_table
+ptr_dispatch_ring: .b32 #dispatch_ring
+ptr_dispatch_data: .b32 #dispatch_data
+ptr_rdispatch_ring: .b32 #rdispatch_ring
+ptr_temp_name: .b32 #temp_name
+ptr_temp_mode_func_ptr: .b32 #temp_mode_func_ptr
+ptr_temp_last_updated: .b32 #temp_last_updated
+ptr_temp_pwm_id: .b32 #temp_pwm_id
+ptr_temp_pwm_cur: .b32 #temp_pwm_cur
+ptr_temp_pwm_divisor: .b32 #temp_pwm_divisor
+ptr_temp_pwm_min: .b32 #temp_pwm_min
+ptr_temp_pwm_max: .b32 #temp_pwm_max
+ptr_temp_fan_mode: .b32 #temp_fan_mode
+ptr_temp_temp_target: .b32 #temp_temp_target
+ptr_temp_critical: .b32 #temp_critical
+ptr_temp_down_clock: .b32 #temp_down_clock
+ptr_temp_fan_boost: .b32 #temp_fan_boost
+//ptr_FSE_name: .b32 #FSE_name
+
+ifdef(`NVA3',
+.section #nva3_pdaemon_data
+,
+.section #nvd9_pdaemon_data
+)
+/* memory map
+ * start	stop		purpose
+ * ------------------------------------
+ * 0x0		0x400		stack
+ * 0x400	0x500		core
+ * 0x500	0xa00		dispatch
+ * 0xa00	0xb00		rdispatch
+ * 0xb00	0xc00		temp_mgmt
+ * 0xc00	0xd00		FSE
+ */
+/* stack */
+stack_begin: .b8 0xfe
+.skip 0x3fb
+stack_end: .b32 0xdeadcafe
+
+/* core */
+core_name: .b8 0x63 0x6f 0x72 0x65 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0
+core_pdaemon_freq: .b32 202000000 // 202MHz
+.align 0x100
+
+/* dispatch */
+dispatch_fence: .b32 0
+.skip 0xc
+dispatch_pid_table:	.b32 #core_dispatch #temp_dispatch #FSE_parse_opcode 0x00
+			.b32 0x00 0x00 0x00 0x00
+			.b32 0x00 0x00 0x00 0x00
+			.b32 0x00 0x00 0x00 0x00
+
+dispatch_ring:		.b32 0xff 0xff 0xff 0xff
+			.b32 0xff 0xff 0xff 0xff
+			.b32 0xff 0xff 0xff 0xff
+			.b32 0xff 0xff 0xff 0xff
+
+dispatch_data: .b32 0xdeadbeef
+.skip 0x46c
+
+/* rdispatch */
+rdispatch_ring: .b32 0xdeadbabe
+.align 0x100
+
+/* temp_mgmt */
+temp_name: .b8 0x74 0x65 0x6d 0x70 0x5f 0x6d 0x67 0x6d 0x74 0x0 0x0 0x0 0x0 0x0 0x0 0x0 /* temp_mgmt */
+temp_mode_func_ptr: .b16 #temp_control_manual #temp_control_linear #temp_control_linear #temp_control_target
+temp_last_updated: .b64 0
+temp_pwm_id: .b8 0
+temp_pwm_cur: .b8 30
+temp_pwm_divisor: .b16 0x21c
+temp_pwm_min: .b8 30
+temp_pwm_max: .b8 100
+temp_fan_mode: .b8 2
+temp_temp_target: .b8 60
+temp_critical: .b8 110
+temp_down_clock: .b8 100
+temp_fan_boost: .b8 90
+temp_fan_start: .b8 30
+.align 0x100
+
+/* FSE */
+FSE_name: .b8 0x68 0x77 0x73 0x71 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0/* FSE */
+.align 0x100
+
+
+ifdef(`NVA3',
+.section #nva3_pdaemon_code
+,
+.section #nvd9_pdaemon_code
+)
+init:
+	/* force $r0 to 0 */
+	clear b32 $r0
+
+	/* set the stack pointer */
+	mov $r1 #stack_end
+	mov $sp $r1
+
+	/* set the interrupt vectors */
+	mov $r1 #isr
+	mov $iv0 $r1
+	mov $iv1 $r1
+
+	/* iowr(FIFO_PUT[0], dispatch_ring) */
+	IOADDR(`#io_FIFO_0_PUT', `$r1')
+	mov $r2 #dispatch_ring
+	iowrs I[$r1] $r2
+
+	/* iowr(FIFO_GET[0], dispatch_ring) */
+	IOADDR(`#io_FIFO_0_GET', `$r1')
+	mov $r2 #dispatch_ring
+	iowrs I[$r1] $r2
+
+	/* route all IRQs to the fuc vector 0: iowr(INTR_ROUTING, 0x0) */
+	IOADDR(`#io_INTR_ROUTING', `$r1')
+	clear b32 $r2
+	iowrs I[$r1] $r2
+
+	/* enable FIFO interrupts: iowr(INTR_EN_SET, 0x800) */
+	IOADDR(`#io_INTR_EN_SET', `$r1')
+	movw $r2 0x800
+	sethi $r2 0x0
+	iowrs I[$r1] $r2
+
+	/* enable interrupts on FIFO 0: iowr(FIFO_INTR_EN, 0x1) */
+	IOADDR(`#io_FIFO_INTR_EN', `$r1')
+	movw $r2 0x1
+	sethi $r2 0x0
+	iowrs I[$r1] $r2
+
+	/* init the fence value to 0 */
+	movw $r10 #dispatch_fence
+	sethi $r10 0
+ 	clear b32 $r11
+	st b32 D[$r10] $r11
+
+	/* deactivate traps and activate iv0/1 */
+	bclr $flags ta
+	bset $flags ie0
+	bset $flags ie0
+
+	/* iowr(RFIFO_PUT, rdispatch_ring)
+	 * iowr(RFIFO_GET, rdispatch_ring)
+	 */
+	mov $r15 #rdispatch_ring
+	IOADDR(`#io_RFIFO_PUT', `$r14')
+	iowrs I[$r14] $r15
+	IOADDR(`#io_RFIFO_GET', `$r14')
+	iowrs I[$r14] $r15
+
+	bra #main
+	exit
+
+/* Interrupt handler
+ * In: 	None
+ * Out:	None
+ */
+isr:
+	/* save the current context */
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+	push $r5
+	push $r6
+	push $r7
+	push $r8
+	push $r9
+	push $r10
+	push $r11
+	push $r12
+	push $r13
+	push $r14
+	push $r15
+	mov $r1 $flags
+	push $r1
+
+	ld b32 $r1 D[$r0+4]
+	add b32 $r1 $r1 1
+	st b32 D[$r0+4] $r1
+
+	/* TODO: deactivate IRQs */
+
+	/* $r1 = iord(INTR) */
+	IOADDR(`#io_INTR', `$r3')
+	iord $r1 I[$r3]
+
+	/* $r2 = iord(INTR11) */
+	IOADDR(`#io_INTR11', `$r3')
+	iord $r2 I[$r3]
+
+	/* line 11 ? */
+	xbit $r3 $r1 11
+	cmpu b8 $r3 1
+	bra ne #isr_dispatch_next
+
+	/* line 11: subline 1 ? */
+	xbit $r3 $r2 1
+	cmpu b8 $r3 1
+	bra ne #isr_dispatch_next
+
+	/* that's an internal FIFO IRQ */
+	call #dispatch
+
+isr_dispatch_next:
+	/* reload the interrupt state to check we handled everything */
+	IOADDR(`#io_INTR', `$r1')
+	iord $r1 I[$r1] // $r1 = iord(INTR)
+	IOADDR(`#io_INTR11', `$r2')
+	iord $r2 I[$r2] // $r2 = iord(INTR11)
+
+	/* display the current interrupt state */
+	/*st b32 D[$r0 + 8] $r1
+	st b32 D[$r0 + 0xc] $r2*/
+
+	/* ack all the IRQs */
+	IOADDR(`#io_INTR_CLEAR', `$r1')
+	mov $r3 -1
+	iowrs I[$r1] $r3
+
+	IOADDR(`#io_INTR11', `$r1')
+	clear b32 $r3
+	iowrs I[$r1] $r3
+
+	/* TODO: reactivate IRQs */
+
+	/* restore the context */
+	pop $r1
+	mov $flags $r1
+	pop $r15
+	pop $r14
+	pop $r13
+	pop $r12
+	pop $r11
+	pop $r10
+	pop $r9
+	pop $r8
+	pop $r7
+	pop $r6
+	pop $r5
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+
+	iret
+
+/* mmsync: mmio sync
+ * In:	None
+ * Out:	None
+ */
+mmsync:
+	mov $r9 0
+	mmloop_:
+		IOADDR(`#io_MMIO_CTRL', `$r15')
+		iord $r15 I[$r15]
+		add b32 $r9 $r9 1
+		extr $r15 $r15 12:14
+		bra nz #mmloop_
+	ret
+
+/* mmwr: mmio write:
+ * In: 	$r10: addr
+ * 	$r11: value
+ * Out:	None
+ */
+mmwr:
+	call #mmsync
+
+	/* iowr(MMIO_ADDR, $r10) */
+	IOADDR(`#io_MMIO_ADDR', `$r15')
+	iowr I[$r15] $r10
+
+	/* iowr(MMIO_VALUE, $r11) */
+	IOADDR(`#io_MMIO_VAL', `$r15')
+	iowr I[$r15] $r11
+
+	/* iowr(MMIO_CTRL, 0x100f2) : trigger the write */
+	IOADDR(`#io_MMIO_CTRL', `$r15')
+	mov $r11 0xf2
+	sethi $r11 0x10000
+	iowrs I[$r15] $r11
+
+	/* TODO: check for errors */
+
+	ret
+
+/* mmwrs: mmio write sync
+ * In: 	$r10: addr
+ * 	$r11: value
+ * Out:	None
+ */
+mmwrs:
+	call #mmwr
+	call #mmsync
+	ret
+
+/* mmrd: mmio read
+ * In: 	$r10: addr
+ * Out:	$r10: value
+ */
+mmrd:
+	call #mmsync
+
+	/* iowr(MMIO_ADDR, $r10) */
+	IOADDR(`#io_MMIO_ADDR', `$r15')
+	iowr I[$r15] $r10
+
+	/* iowr(MMIO_CTRL, 0x100f1) : trigger the read */
+	IOADDR(`#io_MMIO_CTRL', `$r15')
+	mov $r11 0xf1
+	sethi $r11 0x10000
+	iowrs I[$r15] $r11
+
+	call #mmsync
+
+	/* iowr(MMIO_VALUE, $r11) */
+	IOADDR(`#io_MMIO_VAL', `$r15')
+	iord $r10 I[$r15]
+
+	ret
+
+/* chipset
+ * In: 	None
+ * Out:	$r10: the chipset
+ */
+chipset:
+	clear b32 $r10
+	call #mmrd
+	shr b32 $r10 $r10 20
+	and $r10 $r10 0xff
+	ret
+
+/* get_time
+ * In: 	None
+ * Out:	$r10: TIME_HIGH
+ *      $r11: TIME_LOW
+ */
+get_time:
+	/* $r11 = iord(TIME_HIGH) */
+	IOADDR(`#io_TIME_HIGH', `$r10')
+	iord $r11 I[$r10]
+
+	/* $r12 = iord(TIME_LOW) */
+	IOADDR(`#io_TIME_LOW', `$r10')
+	iord $r12 I[$r10]
+
+	/* $r13 = iord(TIME_HIGH) */
+	IOADDR(`#io_TIME_HIGH', `$r10')
+	iord $r13 I[$r10]
+
+	/* no overflow happened? */
+	cmpu b32 $r11 $r13
+	bra ne #get_time
+
+	/* $r10 = TIME_HIGH; $r11 = TIME_LOW */
+	mov b32 $r10 $r13
+	mov b32 $r11 $r12
+	ret
+
+/* memcpy:
+ * In: 	$r10: dst
+ * 	$r11: src
+ * 	$r12: length
+ * Out:	None
+ */
+memcpy:
+	/* return when length == 0 */
+	cmpu b32 $r12 0
+	bra e #memcpy_exit
+
+	/* dst[0] = src[0] */
+	ld b8 $r13 D[$r11]
+	st b8 D[$r10] $r13
+
+	/* inc $r10 and $r11 then dec $r12 */
+	add b32 $r10 1
+	add b32 $r11 1
+	sub b32 $r12 1
+
+	bra #memcpy
+memcpy_exit:
+	ret
+
+/* memcpy_ring:
+ * In: 	$r10: dst
+ * 	$r11: ring_base
+ * 	$r12: ring_size
+ * 	$r13: src
+ * 	$r14: length
+ * Out:	None
+ */
+memcpy_ring:
+	/* return when length == 0 */
+	cmpu b32 $r14 0
+	bra e #memcpy_ring_exit
+
+	/* dst[0] = src[0] */
+	ld b8 $r15 D[$r13]
+	st b8 D[$r10] $r15
+
+	/* dst = RING_BASE + ((dst + 1) % RING_SIZE);
+	 * src++;
+	 * length--;
+	 */
+	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
+	add b32 $r13 1
+	sub b32 $r14 1
+
+	bra #memcpy_ring
+
+memcpy_ring_exit:
+	ret
+
+/* rdispatch_send_msg: Sends msgs from PDAEMON processes to HOST
+ * WARNING: Do not try to push a message larger than rdispatch_size - 3!
+ * In:	$r10: pid (Process Id)
+ * 	$r11: msg_id (Message Id)
+ * 	$r12: payload_size (Size of the message payload being sent)
+ * 	$r13: start of payload
+ */
+rdispatch_send_msg:
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+	push $r5
+
+	mov b32 $r1 $r10
+	mov b32 $r2 $r11
+	mov b32 $r3 $r12
+	mov b32 $r4 $r13
+
+wait_for_size_available_loop:
+
+	/*while( RING_SIZE - memoryUsed() < payload_size + 3) { */
+		/* $r10 = rdispatch_memory_used */
+		call #rdispatch_memory_used
+
+		/* $r12 = rdispatch_size */
+		mov $r12 #const_rdispatch_size
+
+		/* $r10 = rdispatch_size - rdispatch_memory_used */
+		sub b32 $r10 $r12 $r10
+
+		/* $r11 = header_size + payload_size */
+		add b32 $r11 $r3 3
+
+		cmp b32 $r10 $r11
+		bra l #wait_for_size_available_loop
+	/* } */
+
+	/* $r10 = RFIFO_PUT */
+	IOADDR(`#io_RFIFO_PUT', `$r15')
+	iord $r10 I[$r15]
+
+	/* $r11 = rdispatch_ring */
+	mov $r11 #rdispatch_ring
+
+	/* $r12 = rdispatch_size */
+	mov $r12 #const_rdispatch_size
+
+	/* D[*PUT] = pid; D[*PUT+1] = msg_id; D[*PUT+2] = payload_size
+	 * $r10 = wrap(RFIFO_PUT + 3)
+	 */
+	st b8 D[$r10] $r1
+	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
+	st b8 D[$r10] $r2
+	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
+	st b8 D[$r10] $r3
+	RING_WRAP_AROUND(`$r10', `1', `$r11', `$r12', `$r10')
+
+	/* $r13 = payload_src */
+	mov b32 $r13 $r4
+
+	/* $r14 = payload_size */
+	mov b32 $r14 $r3
+
+	/* $r5 = wrap(RFIFO_PUT + header_size + payload_size) */
+	IOADDR(`#io_RFIFO_PUT', `$r15')
+	iord $r15 I[$r15]
+	add b32 $r5 $r3 3
+	RING_WRAP_AROUND(`$r15', `$r5', `$r11', `$r12', `$r5')
+
+	/* copy the payload to the ring */
+	call #memcpy_ring
+
+	/* update RFIFO_PUT */
+	IOADDR(`#io_RFIFO_PUT', `$r15')
+	iowrs I[$r15] $r5
+
+	pop $r5
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+
+	ret
+
+
+/* rdispatch_memory_used: return the number of bytes used by rdispatch
+ * In:	None
+ * Out:	$r10: number of bytes used by rdispatch
+ */
+rdispatch_memory_used:
+
+	IOADDR(`#io_RFIFO_PUT', `$r12')
+	iord $r10 I[$r12]
+
+	IOADDR(`#io_RFIFO_GET', `$r12')
+	iord $r11 I[$r12]
+
+	cmpu b32 $r10 $r11
+	bra ae #rdispatch_memory_used_put_greater
+
+	add b32 $r10 $r10 #const_rdispatch_size
+
+rdispatch_memory_used_put_greater:
+	sub b32 $r10 $r10 $r11
+	ret
+
+/* strncpy:
+ * In: 	$r10: dst
+ * 	$r11: src
+ * 	$r12: max_length
+ * Out:	None
+ */
+strncpy:
+	/* return when length == 0 */
+	cmpu b32 $r12 0
+	bra e #memcpy_exit
+
+	/* dst[0] = src[0] */
+	ld b8 $r13 D[$r11]
+	st b8 D[$r10] $r13
+
+	/* next byte please! */
+	add b32 $r10 1
+	add b32 $r11 1
+	sub b32 $r12 1
+
+	/* if $r13 = '\0', return */
+	cmpu b32 $r13 0
+	bra e #memcpy_exit
+
+	bra #memcpy
+strncpy_exit:
+	ret
+
+/* sleep_ns: wait $r10 ns
+ * In: 	$r10: number of ns (HIGH)
+ * 	$r11: number of ns (LOW)
+ * Out:	None
+ */
+sleep_ns:
+	push $r1
+	push $r2
+
+	/* $r1 = wait_ns HIGH; $r2 = wait_ns LOW*/
+	mov b32 $r1 $r10
+	mov b32 $r2 $r11
+
+	call #get_time
+
+	/* $r2 = TIME_LOW + wait_ns LOW */
+	add b32 $r2 $r2 $r11
+
+	/* $r1 = TIME_HIGH + wait_ns HIGH + carry */
+	adc b32 $r1 $r1 $r10
+
+	/* wait for TIME_LOW > $r1 */
+sleep_ns_loop:
+	call #get_time
+
+	/* compare TIME_HIGH */
+	cmpu b32 $r1 $r10
+	bra a #sleep_ns_loop
+
+	/* compare TIME_LOW */
+	cmpu b32 $r11 $r2
+	bra na #sleep_ns_loop
+
+	pop $r2
+	pop $r1
+	ret
+
+// TODO: deferred task, periodic timer
+
+/* dispatch: read from the dispatch ring buffer
+ * In: 	None
+ * Out:	None
+ */
+dispatch:
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+	push $r5
+	push $r6
+	push $r7
+	push $r8
+	push $r9
+
+	/* ack FIFO_INTR */
+	IOADDR(`#io_FIFO_INTR', `$r10')
+	mov $r11 1
+	iowrs I[$r10] $r11
+
+	/* ack the dispatch IRQ */
+	IOADDR(`#io_INTR_CLEAR', `$r10')
+	mov $r3 0x800
+	iowrs I[$r10] $r3
+
+dispatch_loop:
+	/* $r1 = mmio_rd(FIFO_PUT, 0) */
+	IOADDR(`#io_FIFO_0_PUT', `$r10')
+	iord $r1 I[$r10]
+
+	/* $r2 = mmio_rd(FIFO_GET, 0) */
+	IOADDR(`#io_FIFO_0_GET', `$r10')
+	iord $r2 I[$r10]
+
+	/* if FIFO_PUT == FIFO_GET then exit */
+	cmpu b32 $r2 $r1
+	bra e #dispatch_exit
+
+	/* $r3 = pid from FIFO_GET */
+	clear b32 $r3
+	ld b8 $r3 D[$r2 + 3]
+	shr b8 $r3 4
+
+	/* $r4 = packet size from FIFO_GET */
+	clear b32 $r4
+	ld b16 $r4 D[$r2 + 2]
+	and $r4 0xfff
+
+	/* $r5 = packet ptr from FIFO_GET */
+	clear b32 $r5
+	ld b16 $r5 D[$r2 + 0]
+
+	/* $r6 = dispatch_pid_table[pid] */
+	clear b32 $r7
+	movw $r7 #dispatch_pid_table	// $r7 = dispatch_pid_table
+	clear b32 $r6
+	mov b8 $r6 $r3
+	shl b8 $r6 $r6 2		// $r6 = pid * 4
+	add b32 $r7 $r6			// $r7 = addr of dispatch_pid_table[pid]
+	ld b32 $r6 D[$r7]		// $r6 = *$r7
+
+	/* if $r6 then $r6() : call the dispatch method of the pid */
+	mov b32 $r10 $r4
+	mov b32 $r11 $r5
+	call $r6
+
+	/* bump FIFO_GET: mmio_wr(FIFO_GET, dispatch_ring + (($r2 - dispatch_ring) + 4) % 0x40) */
+	IOADDR(`#io_FIFO_0_GET', `$r1')
+	sub b32 $r2 #dispatch_ring
+	add b32 $r2 0x4
+	mod $r2 $r2 0x40
+	add b32 $r2 #dispatch_ring
+	iowrs I[$r1] $r2
+
+	/* increase DISPATCH_FENCE */
+	movw $r10 #dispatch_fence
+	sethi $r10 0
+	ld b32 $r11 D[$r10]
+	add b32 $r11 $r11 1
+	st b32 D[$r10] $r11
+
+	/* loop */
+	bra #dispatch_loop
+
+dispatch_exit:
+
+	pop $r9
+	pop $r8
+	pop $r7
+	pop $r6
+	pop $r5
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+
+	ret
+
+/* dispatch_parse_cmd: parse command (get/set)
+ * In: 	$r10: packet size
+ * 	$r11: packet ptr
+ * Out:	$r10: type (get/set) : get == 0, set == 1, error == 0xffffffff
+ * 	$r11: resource_id
+ * 	$r12: resource_size
+ * 	$r13: resource_data
+ */
+dispatch_parse_cmd:
+	/* check packet size and bail out if it is lower than 8 (2 words) */
+	mov b32 $r12 $r10
+	clear b32 $r10
+	sub b32 $r10 $r10 1 // <-- $r10 = 0xffffffff
+	cmpu b32 $r12 4
+	bra g #dispatch_parse_cmd_exit
+	mov b32 $r10 $r12
+
+	/* read the cmd header */
+	ld b32 $r14 D[$r11 + 0]
+
+	/* get the resource data ptr (packet_ptr + 4) */
+	add b32 $r13 $r11 4
+
+	/* get the resource size */
+	ld b16 $r12 D[$r11 + 2]
+	bclr $r12 15 // mask the get/set bit
+
+	/* get the resource id */
+	ld b16 $r11 D[$r11 + 0]
+
+	/* get the type (bit 31 of word 0) */
+	xbit $r10 $r14 31
+
+dispatch_parse_cmd_exit:
+	ret
+
+/* dispatch_exec_cmd: execute a command (get/set)
+ * In:	$r10: type (get/set) : get == 0, set == 1, error == 0xffffffff
+ * 	$r11: resource_id
+ * 	$r12: resource_size
+ * 	$r13; data_ptr
+ * 	$r14: process' data base address
+ * Out:	None
+ */
+dispatch_exec_cmd:
+	/* is it a get command ? */
+	cmpu b32 $r10 0
+	bra e #dispatch_exec_cmd_get
+
+	/* is it a set command ?*/
+	cmpu b32 $r10 1
+	bra e #dispatch_exec_cmd_set
+
+	/* unknown command, bail out */
+	movw $r10 0
+	bra #dispatch_exec_cmd_exit
+
+dispatch_exec_cmd_get:
+	/* copy the resource to the destination: memcpy(dst=$r13, src=$r11+$r14, len=$r12) */
+	mov b32 $r10 $r13
+	add b32 $r11 $r14 $r11
+	call #memcpy
+
+	movw $r10 1
+	bra #dispatch_exec_cmd_exit
+
+dispatch_exec_cmd_set:
+	/* copy the values to the destination: memcpy(dst=$r11+$r14, src=$r13, len=$r12) */
+	add b32 $r10 $r14 $r11
+	mov b32 $r11 $r13
+	call #memcpy
+
+	movw $r10 1
+	bra #dispatch_exec_cmd_exit
+
+dispatch_exec_cmd_exit:
+	ret
+
+
+/***************************************
+ *                                     *
+ *               Core                  *
+ *                                     *
+ ***************************************/
+
+/* core_dispatch: core's dispatch handler
+ * In: 	$r10: packet size
+ * 	$r11: packet ptr
+ * Out:	None
+ */
+core_dispatch:
+	/* parse the command header */
+	call #dispatch_parse_cmd
+
+	/* let's exec the command */
+	movw $r14 #core_name
+	call #dispatch_exec_cmd
+	ret
+
+/***************************************
+ *                                     *
+ *       Temperature Management        *
+ *                                     *
+ ***************************************/
+
+/* temp_dispatch: temp_mgmt's dispatch handler
+ * In: 	$r10: packet size
+ * 	$r11: packet ptr
+ * Out:	None
+ */
+temp_dispatch:
+	/* parse the command header */
+	call #dispatch_parse_cmd
+
+	/* let's exec the command */
+	movw $r14 #temp_name
+	call #dispatch_exec_cmd
+
+	/* change the fan speed */
+	//call #temp_main
+
+	ret
+
+/* temp_set_pwm: set the fan speed according to the current state of memory
+ * In: 	None (everything is set according to the data address space)
+ * Out:	None
+ */
+temp_set_pwm:
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+
+	/* $r2 = D[pwm_id] */
+	movw $r1 #temp_pwm_id
+	sethi $r1 0
+	clear b32 $r2
+	ld b8 $r2 D[$r1]
+
+	/* $r3 = D[pwm_divs] */
+	movw $r1 #temp_pwm_divisor
+	sethi $r1 0
+	clear b32 $r3
+	ld b16 $r3 D[$r1]
+
+	/* $r4 = D[temp_pwm_cur] */
+	movw $r1 #temp_pwm_cur
+	sethi $r1 0
+	clear b32 $r4
+	ld b8 $r4 D[$r1]
+
+	/* $r4 = ((divs * percent) + 99) / 100 */
+	mulu $r4 $r4 $r3
+	add b32 $r4 99
+	div $r4 $r4 100
+
+	/* mmio_wr(0xe114 + (id * $r3) */
+	movw $r10 0xe114
+	sethi $r10 0
+	mulu $r11 $r2 8
+	add b32 $r10 $r11
+	mov b32 $r11 $r3
+	call #mmwrs
+
+	/* mmio_wr(PWM_DUTY, $r4 | 0x8000000) */
+	clear b32 $r10
+	movw $r10 0xe118
+	sethi $r10 0
+	mulu $r11 $r2 8
+ 	add b32 $r10 $r11
+	mov b32 $r11 $r4
+	bset $r11 31
+	call #mmwrs
+
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+	ret
+
+/* temp_read_sensor: read the current temperature
+ * In: 	None
+ * Out:	$r10: the temperature in °C
+ */
+temp_read_sensor:
+	/* $r10 = mmio_rd(0x20400) */
+	movw $r10 0x400
+	sethi $r10 0x20000
+	call #mmrd
+	ret
+
+/* temp_control_manual: do not change the fan speed
+ * In:	$r10: current temperature
+ * Out: $r10: the desired fan speed
+ */
+temp_control_manual:
+	/* $r10 = ld(temp_pwm_cur) */
+	mov $r11 #temp_pwm_cur
+	sethi $r11 0
+	clear b32 $r10
+	ld b8 $r10 D[$r11]
+
+	ret
+
+/* temp_control_linear: change the fan speed linearly with temperature
+ * In:	$r10: current temperature
+ * Out: $r10: the desired fan speed
+ */
+temp_control_linear:
+	/* $r13 = ld(temp_fan_start) */
+	mov $r15 #temp_fan_start
+	sethi $r15 0
+	clear b32 $r13
+	ld b8 $r13 D[$r15]
+
+	/* $r12 = ld(temp_fan_boost) */
+	mov $r15 #temp_fan_boost
+	sethi $r15 0
+	clear b32 $r12
+	ld b8 $r12 D[$r15]
+
+	/* normalize cur_temp and fan_boost (sub temp_fan_start) */
+	sub b32 $r10 $r10 $r13
+	sub b32 $r12 $r12 $r13
+
+	/* $r10 = cur_temp * 100 / fan_boost */
+	mulu $r10 $r10 100
+	div $r10 $r10 $r12
+
+	ret
+
+/* idiv_32: divide a positive/negative number by a positive number
+ * In:	$r10
+ * 	$r11
+ * Out: $r10: $r10 / $r11
+ */
+idiv_32:
+	/* is it a negative number ? */
+	xbit $r12 $r10 31
+	bra nz #div_32_neg
+
+	/* positive, do the division and return */
+	div $r10 $r10 $r11
+
+	ret
+div_32_neg:
+	/* $r10 = (($r10 * -1) / $r11) * -1 */
+	clear b32 $r12
+	sub b32 $r12 $r12 1
+	muls $r10 $r10 $r12
+	div $r10 $r10 $r11
+	muls $r10 $r10 $r12
+
+	ret
+
+
+/* temp_control_target: change the fan speed to keep the board to a certain temperature
+ * In:	$r10: current temperature
+ * Out: $r10: the desired fan speed
+ */
+temp_control_target:
+	push $r1
+	push $r2
+
+	/* $r1 = ld(temp_temp_target) */
+	mov $r15 #temp_temp_target
+	sethi $r15 0
+	clear b32 $r11
+	ld b8 $r1 D[$r15]
+
+	/* $r2 = ld(temp_pwm_cur) */
+	mov $r15 #temp_pwm_cur
+	sethi $r15 0
+	clear b32 $r2
+	ld b8 $r2 D[$r15]
+
+	/* slope = 1/2; hysteresis at target_temp = +/- 1°C */
+	sub b32 $r10 $r10 $r1
+	movw $r11 2
+	sethi $r11 0
+	call #idiv_32
+
+	/* speed += deltaTemp/2 */
+	add b32 $r10 $r2 $r10
+
+	/* sanity check: $r10 must be >= 0 */
+	cmp b32 $r10 0
+	bra ge #temp_control_target_exit
+
+	clear b32 $r10
+
+temp_control_target_exit:
+
+	pop $r2
+	pop $r1
+	ret
+
+/* temp_main: temp_mgmt's main function
+ * In:	None
+ * Out:	None
+ */
+temp_main:
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+	push $r5
+
+	/* $r1 = ld($r2 = temp_fan_mode) */
+	movw $r2 #temp_fan_mode
+	sethi $r2 0
+	clear b32 $r1
+	ld b8 $r1 D[$r2]
+
+	/* check if the method is supported (id < 4) */
+	cmpu b32 $r1 3
+	bra na #temp_main_sanity_check_ok
+
+	/* default to method 2 */
+	movw $r1 2
+	sethi $r1 0
+	st b8 D[$r2] $r1
+
+	/* TODO: report error ? */
+
+temp_main_sanity_check_ok:
+	/* $r3 = $r10 = temp_read_sensor() */
+	call #temp_read_sensor
+	mov b32 $r3 $r10
+
+	/* set the desired fan speed to 100% for the moment */
+	movw $r5 100
+	sethi $r5 0
+
+	/* $r12 = ld(temp_fan_boost) */
+	mov $r15 #temp_fan_boost
+	sethi $r15 0
+	clear b32 $r12
+	ld b8 $r12 D[$r15]
+
+	/* if $r3 (cur_temp) >= $r12 (fan_boost) then $r5 = 100 */
+	cmpu b32 $r3 $r12
+	bra a #temp_main_fan_set
+
+	/* $r2 = ld(temp_fan_mode[$r1]) */
+	movw $r10 #temp_mode_func_ptr
+	sethi $r10 0
+	mulu $r11 $r1 2
+	add b32 $r11 $r10 $r11
+	ld b16 $r2 D[$r11]
+
+	/* $5 = $r2() // call the right fan method */
+	call #temp_read_sensor
+	call $r2
+	mov b32 $r5 $r10
+
+	/* $r3 = ld(temp_pwm_min) */
+	movw $r15 #temp_pwm_min
+	sethi $r15 0
+	clear b32 $r3
+	ld b8 $r3 D[$r15]
+
+	/* $r4 = ld(temp_pwm_max) */
+	movw $r15 #temp_pwm_max
+	sethi $r15 0
+	clear b32 $r4
+	ld b8 $r4 D[$r15]
+
+	/* if $r5 >= $r3 goto fan_set() else $r5 = $r3 */
+	cmpu b32 $r5 $r3
+	bra na #temp_main_fan_set_low
+
+	/* if $r5 <= $r4 goto fan_set() else $r5 = $r4 */
+	cmpu b32 $r5 $r4
+	bra a #temp_main_fan_set_high
+	bra #temp_main_fan_set
+
+temp_main_fan_set_low:
+	mov b32 $r5 $r3
+	bra #temp_main_fan_set
+
+temp_main_fan_set_high:
+	mov b32 $r5 $r4
+
+temp_main_fan_set:
+	/* temp_pwm_cur = $r5 */
+	movw $r10 #temp_pwm_cur
+	sethi $r10 0
+	st b8 D[$r10] $r5
+
+	call #temp_set_pwm
+
+	pop $r5
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+	ret
+
+/***************************************
+ *                                     *
+ *               FSE                   *
+ *                                     *
+ ***************************************/
+
+/*  alignment-independent load */
+/* IN: $r10: addr
+ * OUT: $r10: val = D[addr]
+ */
+ld_32:
+	ld b8 $r11 D[$r10 + 3]  
+	shl b32 $r11 8  
+	
+	ld b8 $r11 D[$r10 + 2]  
+	shl b32 $r11 8  
+	
+	ld b8 $r11 D[$r10 + 1]  
+	shl b32 $r11 8 
+	
+	ld b8 $r11 D[$r10 + 0]  
+	
+	mov b32 $r10 $r11  
+		
+	ret
+	
+ld_16:
+	clear b32 $r11
+	
+	ld b8 $r11 D[$r10 + 1]  
+	shl b32 $r11 8 
+	
+	ld b8 $r11 D[$r10 + 0]  
+	
+	mov b16 $r10 $r11  
+		
+	ret
+	
+ld_08:	
+	clear b32 $r11
+	
+	ld b8 $r11 D[$r10 + 0]  
+	
+	mov b8 $r10 $r11  
+		
+	ret
+	
+/* FSE_parse_opcode: parsing opcodes from generated code
+ * In: 	$r10: pointer to generated code
+ *Out: none
+ */
+
+FSE_parse_opcode:
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+	push $r5
+	push $r6
+	push $r7
+	push $r8
+	push $r9
+	
+	/* store the opcodes */
+	mov $r1 0x00
+	mov $r2 0x01
+	mov $r3 0x02
+	mov $r4 0x10
+	mov $r5 0x11
+	mov $r6 0x12
+	mov $r7 0x13
+	mov $r8 0x20
+	mov $r9 0xff
+	
+	mov b32 $r15 $r10
+	
+	/* load the first position of generated code */
+	ld b8 $r11 D[$r15 + 0]
+	
+	cmpu b8 $r11 $r1
+	bra e #FSE_delay_ns_fr 
+	
+	cmpu b8 $r11 $r2
+	bra e #FSE_delay_ns
+	
+	cmpu b8 $r11 $r3
+	bra e #FSE_delay_us
+	
+	cmpu b8 $r11 $r4
+	bra e #FSE_write
+	
+	cmpu b8 $r11 $r5
+	bra e #FSE_write_b8
+	
+	cmpu b8 $r11 $r6
+	bra e #FSE_mask
+	
+	cmpu b8 $r11 $r7
+	bra e #FSE_wait
+	
+	cmpu b8 $r11 $r8
+	bra e #FSE_send_msg
+	
+	cmpu b8 $r11 $r9
+	bra e #FSE_exit
+	
+	/* unknown opcode*/
+	mov $r10 0
+	call #FSE_exit
+	
+	
+FSE_delay_ns_fr:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
+	
+	call #sleep_ns
+	
+	add b32 $r10 $r1 9	
+	call #FSE_parse_opcode
+	
+FSE_delay_ns:
+	mov $r10 0x0
+	ld b32 $r11 D[$r15 + 1]
+	mov b32 $r1 $r15
+	
+	call #sleep_ns
+	
+	add b32 $r10 $r1 5	
+	call #FSE_parse_opcode
+	
+FSE_delay_us:
+	mov $r10 0x0
+	ld b32 $r11 D[$r15 + 1]
+	mulu $r11 1000
+	mov b32 $r1 $r15
+	
+	call #sleep_ns
+	
+	add b32 $r10 $r1 5	
+	call #FSE_parse_opcode	
+		
+FSE_write:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
+	
+	call #mmwr
+	
+	add b32 $r10 $r1 9	
+	call #FSE_parse_opcode
+
+FSE_write_b8:
+	ld b32 $r10 D[$r15 + 1]	
+	ld b8 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
+	
+	call #mmwr
+	
+	add b32 $r10 $r1 6	
+	call #FSE_parse_opcode
+
+FSE_mask:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	ld b32 $r12 D[$r15 + 9]
+	mov b32 $r1 $r15
+	
+	mov b32 $r13 $r10
+	call #mmrd
+	
+	and $r11 $r10 $r11
+	or $r11 $r11 $r12 
+	
+	mov b32 $r10 $r13
+	
+	call #mmwr
+		
+	add b32 $r10 $r1 13	
+	call #FSE_parse_opcode
+
+FSE_wait:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	ld b32 $r12 D[$r15 + 9]
+	mov b32 $r1 $r15
+		
+FSE_wait_loop:
+	mov b32 $r13 $r10
+	call #mmrd
+	
+	and $r11 $r10 $r11
+	cmpu b32 $r11 $r12
+	bra e #FSE_wait_loop
+	
+	add b32 $r10 $r1 13	
+	call #FSE_parse_opcode
+
+FSE_send_msg:
+	mov $r10 0x2
+	ld b16 $r12 D[$r15 + 1]
+	add b32 $r13 $r15 2
+	
+	/*store incremented pointer*/
+	add b32 $r1 $r13 $r12
+	
+	/* Add value $r11:msg_id */
+	
+	call #rdispatch_send_msg
+	
+	mov b32 $r10 $r1	
+	call #FSE_parse_opcode
+
+FSE_exit:
+	
+	pop $r9
+	pop $r8
+	pop $r7
+	pop $r6
+	pop $r5
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+	
+	ret
+
+/* main:
+ * In: 	None
+ * Out:	None
+ */
+main:
+
+main_loop:
+	/* call the tasks */
+	call #temp_main
+
+	/* test memcpy_ring */
+// 	mov $r10 0xa00
+// 	mov $r11 0xa00
+// 	mov $r12 0x100
+// 	mov $r13 0xd00
+// 	mov $r14 0x8
+// 	call #memcpy_ring
+
+/* Testing #rdispatch_send_msg & #rdispatch_memory_used */
+	/* rdispatch_send_msg: Sends msgs from PDAEMON processes to HOST
+	 * In:	$r10: pid (Process Id)
+	 * 	$r11: msg_id (Message Id)
+	 * 	$r12: payload_size (Size of the message payload being sent)
+	 * 	$r13: start of payload
+	 */
+	mov $r10 1
+	mov $r11 2
+	mov $r12 0xed
+	mov $r13 0xd00
+	call #rdispatch_send_msg
+
+	call #rdispatch_memory_used
+	st b32 D[$r0 + 0xc] $r10
+
+
+	/* sleep_ns(5s) */
+	movw $r11 0xf200
+	sethi $r11 0x2a050000
+	movw $r10 1
+	sethi $r10 0
+	call #sleep_ns
+
+	bra #main_loop
+.align 256
