@@ -1261,14 +1261,14 @@ main_loop:
 	mov $r11 0xc04
 	st b32 D[$r11] $r10
 	
-	mov $r10 0xd06
+	mov $r10 0xd08
 	call #ld_08
-	mov $r11 0xc06
+	mov $r11 0xc08
 	st b32 D[$r11] $r10
 	
-	mov $r10 0xd08
+	mov $r10 0xd0c
 	call #ld_16
-	mov $r11 0xc08
+	mov $r11 0xc0c
 	st b32 D[$r11] $r10
 	
 	
