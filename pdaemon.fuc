@@ -1237,7 +1237,201 @@ ld_08:
 		
 	ret
 	
+/* FSE_parse_opcode: parsing opcodes from generated code
+ * In: 	$r10: pointer to generated code
+ *Out: none
+ */
+
 FSE_parse_opcode:
+	push $r1
+	push $r2
+	push $r3
+	push $r4
+	push $r5
+	push $r6
+	push $r7
+	push $r8
+	push $r9
+	
+	/* store the opcodes */
+	mov $r1 0x00
+	mov $r2 0x01
+	mov $r3 0x02
+	mov $r4 0x10
+	mov $r5 0x11
+	mov $r6 0x12
+	mov $r7 0x13
+	mov $r8 0x20
+	mov $r9 0xff
+	
+	mov b32 $r15 $r10
+	
+	/* load the first position of generated code */
+	ld b8 $r11 D[$r15 + 0]
+	
+	cmpu b8 $r11 $r1
+	bra e #FSE_delay_ns_fr 
+	
+	cmpu b8 $r11 $r2
+	bra e #FSE_delay_ns
+	
+	cmpu b8 $r11 $r3
+	bra e #FSE_delay_us
+	
+	cmpu b8 $r11 $r4
+	bra e #FSE_write
+	
+	cmpu b8 $r11 $r5
+	bra e #FSE_write_b8
+	
+	cmpu b8 $r11 $r6
+	bra e #FSE_mask
+	
+	cmpu b8 $r11 $r7
+	bra e #FSE_wait
+	
+	cmpu b8 $r11 $r8
+	bra e #FSE_send_msg
+	
+	cmpu b8 $r11 $r9
+	bra e #FSE_exit
+	
+	/* unknown opcode*/
+	mov $r10 0
+	call #FSE_exit
+	
+/* Full range delay */
+FSE_delay_ns_fr:
+	mov b32 $r1 $r15
+	
+	/* ld b32 $r10 D[$r1 + 1] */
+	add b32 $r10 $r1 1
+	call #ld_32
+	
+	/* r2 = r10 = HIGH */
+	mov b32 $r2 $r10
+	
+	/* ld b32 $r11 D[$r1 + 5] */
+	add b32 $r10 $r1 5
+	call #ld_32
+	
+	/* r11 = r10 = LOW */
+	mov b32 $r11 $r10
+	
+	/* r10 = r2 = HIGH */
+	mov b32 $r10 $r2
+	
+	/* r10 = HIGH  r11 = LOW */
+	call #sleep_ns
+	
+	/* Position + 9 */
+	add b32 $r10 $r1 9	
+	call #FSE_parse_opcode
+	
+FSE_delay_ns:
+	mov $r10 0x0
+	ld b32 $r11 D[$r15 + 1]
+	mov b32 $r1 $r15
+	
+	call #sleep_ns
+	
+	add b32 $r10 $r1 5	
+	call #FSE_parse_opcode
+	
+FSE_delay_us:
+	mov $r10 0x0
+	ld b32 $r11 D[$r15 + 1]
+	mulu $r11 1000
+	mov b32 $r1 $r15
+	
+	call #sleep_ns
+	
+	add b32 $r10 $r1 5	
+	call #FSE_parse_opcode	
+		
+FSE_write:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
+	
+	call #mmwr
+	
+	add b32 $r10 $r1 9	
+	call #FSE_parse_opcode
+
+FSE_write_b8:
+	ld b32 $r10 D[$r15 + 1]	
+	ld b8 $r11 D[$r15 + 5]
+	mov b32 $r1 $r15
+	
+	call #mmwr
+	
+	add b32 $r10 $r1 6	
+	call #FSE_parse_opcode
+
+FSE_mask:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	ld b32 $r12 D[$r15 + 9]
+	mov b32 $r1 $r15
+	
+	mov b32 $r13 $r10
+	call #mmrd
+	
+	and $r11 $r10 $r11
+	or $r11 $r11 $r12 
+	
+	mov b32 $r10 $r13
+	
+	call #mmwr
+		
+	add b32 $r10 $r1 13	
+	call #FSE_parse_opcode
+
+FSE_wait:
+	ld b32 $r10 D[$r15 + 1]
+	ld b32 $r11 D[$r15 + 5]
+	ld b32 $r12 D[$r15 + 9]
+	mov b32 $r1 $r15
+		
+FSE_wait_loop:
+	mov b32 $r13 $r10
+	call #mmrd
+	
+	and $r11 $r10 $r11
+	cmpu b32 $r11 $r12
+	bra e #FSE_wait_loop
+	
+	add b32 $r10 $r1 13	
+	call #FSE_parse_opcode
+
+FSE_send_msg:
+	mov $r10 0x2
+	ld b16 $r12 D[$r15 + 1]
+	add b32 $r13 $r15 2
+	
+	/*store incremented pointer*/
+	add b32 $r1 $r13 $r12
+	
+	/* Add value $r11:msg_id */
+	
+	call #rdispatch_send_msg
+	
+	mov b32 $r10 $r1	
+	call #FSE_parse_opcode
+
+FSE_exit:
+	
+	pop $r9
+	pop $r8
+	pop $r7
+	pop $r6
+	pop $r5
+	pop $r4
+	pop $r3
+	pop $r2
+	pop $r1
+	
 	ret
 	
 /* main:
