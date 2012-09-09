@@ -137,11 +137,32 @@ static void pdaemon_upload(unsigned int cnum) {
 	}
 
 	/* Writing test data to 0xd00 */
- 	uint8_t buffer[0x100];
+ 	uint8_t buffer[23];
 
-	for ( i = 0; i < 0x100; i++)
-	    buffer[i] = i;
-	data_segment_upload_u8(cnum, 0xd00, buffer, 0x100);
+	buffer[0] = 0x10;
+	buffer[1] = 0xd0;
+	buffer[2] = 0xa5;
+	buffer[3] = 0x10;
+	buffer[4] = 0x00;
+	buffer[5] = 0x55;
+	buffer[6] = 0x55;
+	buffer[7] = 0x55;
+	buffer[8] = 0x55;
+	buffer[9] = 0x12;
+	buffer[10] = 0xd0;
+	buffer[11] = 0xa5;
+	buffer[12] = 0x10;
+	buffer[13] = 0x00;
+	buffer[14] = 0x33;
+	buffer[15] = 0x33;
+	buffer[16] = 0x33;
+	buffer[17] = 0x33;
+	buffer[18] = 0x0f;
+	buffer[19] = 0x0f;
+	buffer[20] = 0x0f;
+	buffer[21] = 0x0f;
+	buffer[22] = 0xff;
+	data_segment_upload_u8(cnum, 0xd00, buffer, 23);
 
 	/* code upload */
 	if (nva_cards[cnum].chipset < 0xd9) {
@@ -421,8 +442,9 @@ int main(int argc, char **argv)
 	pdaemon_upload(cnum);
 	usleep(1000);
 
-	data_segment_dump(cnum, 0xc00, 0x10);
-	usleep(5000);
-
+	while(1){
+		data_segment_dump(cnum, 0xc00, 0x10);
+		usleep(5000);
+	}
 	return 0;
 }
