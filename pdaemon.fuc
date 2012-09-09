@@ -1469,7 +1469,7 @@ FSE_wait_loop:
 	
 	and $r11 $r10 $r3
 	cmpu b32 $r11 $r4
-	bra e #FSE_wait_loop
+	bra ne #FSE_wait_loop
 	
 	add b32 $r10 $r1 13	
 	bra #FSE_parse_opcode_loop
