@@ -1298,7 +1298,7 @@ FSE_parse_opcode:
 	
 	/* unknown opcode*/
 	mov $r10 0
-	call #FSE_exit
+	bra #FSE_exit
 	
 /* Full range delay */
 FSE_delay_ns_fr:
@@ -1326,8 +1326,8 @@ FSE_delay_ns_fr:
 	
 	/* Position + 9 */
 	add b32 $r10 $r1 9	
-	call #FSE_parse_opcode
-	
+	bra #FSE_parse_opcode
+		
 FSE_delay_ns:
 	mov b32 $r1 $r15
 	
@@ -1342,7 +1342,7 @@ FSE_delay_ns:
 	call #sleep_ns
 	
 	add b32 $r10 $r1 5	
-	call #FSE_parse_opcode
+	bra #FSE_parse_opcode
 	
 FSE_delay_us:
 	mov b32 $r1 $r15
@@ -1360,7 +1360,7 @@ FSE_delay_us:
 	call #sleep_ns
 	
 	add b32 $r10 $r1 5	
-	call #FSE_parse_opcode	
+	bra #FSE_parse_opcode	
 		
 FSE_write:
 	mov b32 $r1 $r15
@@ -1382,7 +1382,7 @@ FSE_write:
 	call #mmwr
 	
 	add b32 $r10 $r1 9	
-	call #FSE_parse_opcode
+	bra #FSE_parse_opcode
 
 FSE_write_b8:
 	mov b32 $r1 $r15
@@ -1405,7 +1405,7 @@ FSE_write_b8:
 	call #mmwr
 	
 	add b32 $r10 $r1 6	
-	call #FSE_parse_opcode
+	bra #FSE_parse_opcode
 
 FSE_mask:
 	mov b32 $r1 $r15
@@ -1439,7 +1439,7 @@ FSE_mask:
 	call #mmwr
 	
 	add b32 $r10 $r1 13	
-	call #FSE_parse_opcode
+	bra #FSE_parse_opcode
 
 FSE_wait:
 	mov b32 $r1 $r15
@@ -1471,7 +1471,7 @@ FSE_wait_loop:
 	bra e #FSE_wait_loop
 	
 	add b32 $r10 $r1 13	
-	call #FSE_parse_opcode
+	bra #FSE_parse_opcode
 
 FSE_send_msg:
 	mov b32 $r1 $r15
@@ -1492,7 +1492,7 @@ FSE_send_msg:
 	call #rdispatch_send_msg
 	
 	mov b32 $r10 $r1	
-	call #FSE_parse_opcode
+	bra #FSE_parse_opcode
 
 FSE_exit:
 	
