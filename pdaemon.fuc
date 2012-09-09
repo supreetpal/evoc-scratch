@@ -1491,7 +1491,7 @@ FSE_send_msg:
 	add b32 $r1 $r1 $r12 
 	
 	/* Add value $r11:msg_id */
-	mov $r11 0xdeadbeef
+	mov $r11 0x02
 	
 	/* pid = r10 = 0x02 */
 	mov $r10 0x02
