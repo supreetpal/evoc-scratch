@@ -1329,21 +1329,34 @@ FSE_delay_ns_fr:
 	call #FSE_parse_opcode
 	
 FSE_delay_ns:
-	mov $r10 0x0
-	ld b32 $r11 D[$r15 + 1]
 	mov b32 $r1 $r15
 	
+	/* ld b32 $r11 D[$r1 + 1] */
+	/* r11 = LOW */
+	add b32 $r10 $r1 1
+	call #ld_32
+	mov b32 $r11 $r10
+	
+	/* r10 = HIGH = 0 */
+	mov $r10 0x0
 	call #sleep_ns
 	
 	add b32 $r10 $r1 5	
 	call #FSE_parse_opcode
 	
 FSE_delay_us:
-	mov $r10 0x0
-	ld b32 $r11 D[$r15 + 1]
-	mulu $r11 1000
 	mov b32 $r1 $r15
+		
+	/* ld b32 $r11 D[$r1 + 1] */
+	/* r11 = LOW */
+	add b32 $r10 $r1 1
+	call #ld_32
+	mov b32 $r11 $r10
 	
+	mulu $r11 1000
+	
+	/* r10 = HIGH = 0 */
+	mov $r10 0x0
 	call #sleep_ns
 	
 	add b32 $r10 $r1 5	
