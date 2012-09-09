@@ -1342,7 +1342,7 @@ FSE_delay_ns:
 	mov $r10 0x0
 	call #sleep_ns
 	
-	add b32 $r10 $r1 5	
+	add b32 $r10 $r1 3	
 	bra #FSE_parse_opcode_loop
 	
 FSE_delay_us:
@@ -1360,7 +1360,7 @@ FSE_delay_us:
 	mov $r10 0x0
 	call #sleep_ns
 	
-	add b32 $r10 $r1 5	
+	add b32 $r10 $r1 3	
 	bra #FSE_parse_opcode_loop	
 		
 FSE_write:
