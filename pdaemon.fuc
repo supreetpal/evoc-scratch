@@ -1335,7 +1335,7 @@ FSE_delay_ns:
 	/* ld b32 $r11 D[$r1 + 1] */
 	/* r11 = LOW */
 	add b32 $r10 $r1 1
-	call #ld_32
+	call #ld_16
 	mov b32 $r11 $r10
 	
 	/* r10 = HIGH = 0 */
@@ -1351,7 +1351,7 @@ FSE_delay_us:
 	/* ld b32 $r11 D[$r1 + 1] */
 	/* r11 = LOW */
 	add b32 $r10 $r1 1
-	call #ld_32
+	call #ld_16
 	mov b32 $r11 $r10
 	
 	mulu $r11 1000
@@ -1477,17 +1477,22 @@ FSE_wait_loop:
 FSE_send_msg:
 	mov b32 $r1 $r15
 	
-	/* r3 = payload_size */	
-	/*ld b16 $r3 D[$r1 + 1] */
+	/* r12 = payload_size */	
+	/*ld b16 $r12 D[$r1 + 1] */
 	add b32 $r10 $r1 1
 	call #ld_16
-	mov b32 $r3 $r10
+	mov b32 $r12 $r10
+	
+	/* r13 = start of payload */
+	add b32 $r13 $r1 3
 	
 	/*store incremented pointer*/
 	add b32 $r1 $r1 4 /* b16 = 2 + 1 + (1 for after msg) */
-	add b32 $r1 $r1 $r3 
+	add b32 $r1 $r1 $r12 
 	
 	/* Add value $r11:msg_id */
+	mov $r11 0xdeadbeef
+	
 	/* pid = r10 = 0x02 */
 	mov $r10 0x02
 	call #rdispatch_send_msg
