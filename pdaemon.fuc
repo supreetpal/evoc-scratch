@@ -1363,19 +1363,44 @@ FSE_delay_us:
 	call #FSE_parse_opcode	
 		
 FSE_write:
-	ld b32 $r10 D[$r15 + 1]
-	ld b32 $r11 D[$r15 + 5]
 	mov b32 $r1 $r15
 	
+	/* r2 = REG */
+	/* ld b32 $r2 D[$r1 + 1] */
+	add b32 $r10 $r1 1
+	call #ld_32
+	mov b32 $r2 $r10
+	
+	/* r11 = VAL */
+	/* ld b32 $r11 D[$r1 + 5] */
+	add b32 $r10 $r1 5
+	call #ld_32
+	mov b32 $r11 $r10
+	
+	/* r10 = r2 = reg */
+	mov b32 $r10 $r2
 	call #mmwr
 	
 	add b32 $r10 $r1 9	
 	call #FSE_parse_opcode
 
 FSE_write_b8:
-	ld b32 $r10 D[$r15 + 1]	
-	ld b8 $r11 D[$r15 + 5]
 	mov b32 $r1 $r15
+	
+	/* r2 = REG */
+	/* ld b32 $r2 D[$r1 + 1] */
+	add b32 $r10 $r1 1
+	call #ld_32
+	mov b32 $r2 $r10
+	
+	/* r11 = VAL */
+	/* ld b8 $r11 D[$r1 + 5] */
+	add b32 $r10 $r1 5
+	call #ld_08
+	mov b32 $r11 $r10
+	
+	/* r10 = r2 = reg */
+	mov b32 $r10 $r2
 	
 	call #mmwr
 	
@@ -1383,51 +1408,87 @@ FSE_write_b8:
 	call #FSE_parse_opcode
 
 FSE_mask:
-	ld b32 $r10 D[$r15 + 1]
-	ld b32 $r11 D[$r15 + 5]
-	ld b32 $r12 D[$r15 + 9]
 	mov b32 $r1 $r15
 	
-	mov b32 $r13 $r10
+	/* r2 = REG */
+	/* ld b32 $r2 D[$r1 + 1] */
+	add b32 $r10 $r1 1
+	call #ld_32
+	mov b32 $r2 $r10
+	
+	/* r3 = MASK */
+	/* ld b32 $r3 D[$r1 + 5] */
+	add b32 $r10 $r1 5
+	call #ld_32
+	mov b32 $r3 $r10
+	
+	/* r4 = DATA */
+	/* ld b32 $r4 D[$r1 + 9] */
+	add b32 $r10 $r1 9
+	call #ld_32
+	mov b32 $r4 $r10
+	
+	mov b32 $r10 $r2
 	call #mmrd
 	
-	and $r11 $r10 $r11
-	or $r11 $r11 $r12 
+	and $r11 $r10 $r3
+	or $r11 $r11 $r4 
 	
-	mov b32 $r10 $r13
+	mov b32 $r10 $r2
 	
 	call #mmwr
-		
+	
 	add b32 $r10 $r1 13	
 	call #FSE_parse_opcode
 
 FSE_wait:
-	ld b32 $r10 D[$r15 + 1]
-	ld b32 $r11 D[$r15 + 5]
-	ld b32 $r12 D[$r15 + 9]
 	mov b32 $r1 $r15
+	
+	/* r2 = REG */
+	/* ld b32 $r2 D[$r1 + 1] */
+	add b32 $r10 $r1 1
+	call #ld_32
+	mov b32 $r2 $r10
+	
+	/* r3 = MASK */
+	/* ld b32 $r3 D[$r1 + 5] */
+	add b32 $r10 $r1 5
+	call #ld_32
+	mov b32 $r3 $r10
+	
+	/* r4 = DATA */
+	/* ld b32 $r4 D[$r1 + 9] */
+	add b32 $r10 $r1 9
+	call #ld_32
+	mov b32 $r4 $r10
 		
 FSE_wait_loop:
-	mov b32 $r13 $r10
+	mov b32 $r10 $r2
 	call #mmrd
 	
-	and $r11 $r10 $r11
-	cmpu b32 $r11 $r12
+	and $r11 $r10 $r3
+	cmpu b32 $r11 $r4
 	bra e #FSE_wait_loop
 	
 	add b32 $r10 $r1 13	
 	call #FSE_parse_opcode
 
 FSE_send_msg:
-	mov $r10 0x2
-	ld b16 $r12 D[$r15 + 1]
-	add b32 $r13 $r15 2
+	mov b32 $r1 $r15
+	
+	/* r3 = payload_size */	
+	/*ld b16 $r3 D[$r1 + 1] */
+	add b32 $r10 $r1 1
+	call #ld_16
+	mov b32 $r3 $r10
 	
 	/*store incremented pointer*/
-	add b32 $r1 $r13 $r12
+	add b32 $r1 $r1 4 /* b16 = 2 + 1 + (1 for after msg) */
+	add b32 $r1 $r1 $r3 
 	
 	/* Add value $r11:msg_id */
-	
+	/* pid = r10 = 0x02 */
+	mov $r10 0x02
 	call #rdispatch_send_msg
 	
 	mov b32 $r10 $r1	
