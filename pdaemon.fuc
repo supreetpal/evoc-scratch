@@ -151,7 +151,7 @@ core_pdaemon_freq: .b32 202000000 // 202MHz
 /* dispatch */
 dispatch_fence: .b32 0
 .skip 0xc
-dispatch_pid_table:	.b32 #core_dispatch #temp_dispatch #FSE_parse_opcode 0x00
+dispatch_pid_table:	.b32 #core_dispatch #temp_dispatch 0x00
 			.b32 0x00 0x00 0x00 0x00
 			.b32 0x00 0x00 0x00 0x00
 			.b32 0x00 0x00 0x00 0x00
@@ -165,7 +165,7 @@ dispatch_data: .b32 0xdeadbeef
 .skip 0x46c
 
 /* rdispatch */
-rdispatch_ring: .b32 0xdeadbabe
+rdispatch_ring: .b32 0xc00
 .align 0x100
 
 /* temp_mgmt */
@@ -1519,32 +1519,21 @@ FSE_exit:
  * Out:	None
  */
 main:
-
+	
+	
 main_loop:
 	/* call the tasks */
 	call #temp_main
 
-	/* testing ld_xx */
+	/* testing FSE_parse_opcode 
 	mov $r10 0xd00
-	call #ld_32
-	mov $r11 0xc00
-	st b32 D[$r11] $r10
+	call #FSE_parse_opcode */
 	
-	mov $r10 0xd04
-	call #ld_08
-	mov $r11 0xc04
-	st b32 D[$r11] $r10
-	
-	mov $r10 0xd08
-	call #ld_08
-	mov $r11 0xc08
-	st b32 D[$r11] $r10
-	
-	mov $r10 0xd0c
-	call #ld_16
-	mov $r11 0xc0c
-	st b32 D[$r11] $r10
-	
+	mov $r10 1
+	mov $r11 2
+	mov $r12 0xed
+	mov $r13 0xd00
+	call #rdispatch_send_msg
 	
 	/* sleep_ns(5s) */
 	movw $r11 0xf200

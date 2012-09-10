@@ -139,13 +139,13 @@ static void pdaemon_upload(unsigned int cnum) {
 	/* Writing test data to 0xd00 */
  	uint8_t buffer[23];
 
-	buffer[0] = 0x10;
-	buffer[1] = 0xd0;
-	buffer[2] = 0xa5;
-	buffer[3] = 0x10;
-	buffer[4] = 0x00;
-	buffer[5] = 0x55;
-	buffer[6] = 0x55;
+	buffer[0] = 0x20;
+	buffer[1] = 5;
+	buffer[2] = 15;
+	buffer[3] = 25;
+	buffer[4] = 36;
+	buffer[5] = 46;
+	buffer[6] = 56;/*
 	buffer[7] = 0x55;
 	buffer[8] = 0x55;
 	buffer[9] = 0x12;
@@ -160,9 +160,9 @@ static void pdaemon_upload(unsigned int cnum) {
 	buffer[18] = 0x0f;
 	buffer[19] = 0x0f;
 	buffer[20] = 0x0f;
-	buffer[21] = 0x0f;
-	buffer[22] = 0xff;
-	data_segment_upload_u8(cnum, 0xd00, buffer, 23);
+	buffer[21] = 0x0f;*/
+	buffer[7] = 0xff;
+	data_segment_upload_u8(cnum, 0xd00, buffer, 8);
 
 	/* code upload */
 	if (nva_cards[cnum].chipset < 0xd9) {
@@ -418,7 +418,7 @@ int rdispatch_read_msg(int cnum, struct rdispatch_msg *msg){
 
 int main(int argc, char **argv)
 {
-		
+	int RFIFO_PUT;
 	if (nva_init()) {
 		fprintf (stderr, "PCI init failure!\n");
 		return 1;
@@ -442,9 +442,12 @@ int main(int argc, char **argv)
 	pdaemon_upload(cnum);
 	usleep(1000);
 
-	while(1){
-		data_segment_dump(cnum, 0xc00, 0x10);
+	/*while(1){*/
+	RFIFO_PUT = nva_rd32(cnum, 0x10a4c8);
+	
+		data_segment_dump(cnum, RFIFO_PUT, 0x10);
+		
 		usleep(5000);
-	}
+	//}
 	return 0;
 }
